@@ -46,23 +46,20 @@ A full-stack flight booking web application with real-time seat selection, dynam
 
 ## Getting Started
 
-### Prerequisites
-- Node.js v18+
-- MongoDB (local or Atlas)
+Clone the repo, then set up both ends:
 
-### 1. Clone the repo
 ```bash
-git clone https://github.com/your-username/skyvoyage.git
-cd skyvoyage
+# Backend
+cd backend && npm install
+node seed.js      # seed the DB once
+npm run dev
+
+# Frontend (new terminal)
+cd frontend && npm install
+npm start
 ```
 
-### 2. Set up the backend
-```bash
-cd backend
-npm install
-```
-
-Create a `.env` file in the `backend` folder:
+**Backend `.env`**
 ```env
 MONGODB_URI=mongodb://localhost:27017/skyvoyage
 JWT_SECRET=your_jwt_secret
@@ -72,40 +69,10 @@ ADMIN_CODE=your_admin_code
 CLIENT_URL=http://localhost:3000
 ```
 
-Seed the database:
-```bash
-node seed.js
-```
-
-Start the server:
-```bash
-npm run dev
-```
-
-### 3. Set up the frontend
-```bash
-cd frontend
-npm install
-```
-
-Create a `.env` file in the `frontend` folder:
+**Frontend `.env`**
 ```env
 REACT_APP_API_URL=http://localhost:5000/api
 ```
-
-Start the app:
-```bash
-npm start
-```
-
----
-
-## Default Credentials (after seeding)
-
-| Role  | Email | Password |
-|-------|-------|----------|
-| Admin | admin@gmail.com | admin123 |
-| User  | user@gmail.com | user123 |
 
 ---
 
@@ -116,10 +83,12 @@ skyvoyage/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   ├── context/        # AuthContext
+│   │   ├── context/        # AuthContext.jsx
 │   │   ├── constants/      # cities.js
 │   │   ├── pages/          # Home, Login, Register, SeatSelection, etc.
-│   │   └── services/       # api.js (Axios)
+│   │   ├── services/       # api.js (Axios)
+│   │   ├── App.jsx
+|   |   └── index.js
 │   └── .env
 │
 └── backend/
@@ -129,6 +98,7 @@ skyvoyage/
     ├── routes/
     ├── services/           # pricingService.js
     ├── seed.js
+    ├── server.js
     └── .env
 ```
 
@@ -142,8 +112,7 @@ Prices are calculated at seat selection time based on active rules in the databa
 |------|---------|---------|
 | `DEMAND` | Occupancy exceeds threshold % | +₹1,000 when 70%+ seats booked |
 | `TIME` | Booking within X hours of departure | +₹1,500 within 48 hours |
-| `SEAT_TYPE` | Window / Aisle / Middle seat | +₹300 for window |
-| `SEAT_TYPE` | Business class | +₹12,000 for business |
+| `SEAT_TYPE` | Window / Aisle / Middle / Business | +₹300 for window |
 
 Admins can add, remove, and configure rules from the dashboard without touching code.
 
