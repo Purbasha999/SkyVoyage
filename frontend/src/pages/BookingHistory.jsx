@@ -49,7 +49,7 @@ const BookingHistory = () => {
       setSuccessMsg(`Booking ${newBooking.bookingReference} confirmed!`);
     }
     fetchBookings();
-  }, []);
+  }, [location.state]);
 
   const fetchBookings = () => {
     setLoading(true);
