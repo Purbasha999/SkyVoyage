@@ -37,63 +37,36 @@ const addDays = (date, days) => {
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 
+// flightNumber, airline, source, destination, daysFromNow, depHour, depMin, durationMins, basePrice
+const mkFlight = (flightNumber, airline, source, destination, daysOffset, depHour, depMin, durationMins, basePrice) => {
+  const dep = addDays(today, daysOffset);
+  dep.setHours(depHour, depMin, 0, 0);
+  const arr = new Date(dep.getTime() + durationMins * 60000);
+  return { flightNumber, airline, source, destination, departureTime: dep, arrivalTime: arr, basePrice };
+};
+
+// Routes carried over from FlyWise's seed data (outbound legs + their
+// matching return legs a couple of days later, so round-trip search has
+// real return flights to find).
 const flightsData = [
-  {
-    flightNumber: 'ID101', airline: 'Indigo',
-    source: 'DEL', destination: 'BOM',
-    departureTime: new Date(addDays(today, 1).setHours(6, 0)),
-    arrivalTime: new Date(addDays(today, 1).setHours(8, 15)),
-    basePrice: 4500
-  },
-  {
-    flightNumber: 'ID102', airline: 'Indigo',
-    source: 'DEL', destination: 'BOM',
-    departureTime: new Date(addDays(today, 1).setHours(14, 30)),
-    arrivalTime: new Date(addDays(today, 1).setHours(16, 45)),
-    basePrice: 3800
-  },
-  {
-    flightNumber: 'AI201', airline: 'Air India',
-    source: 'BOM', destination: 'BLR',
-    departureTime: new Date(addDays(today, 1).setHours(9, 0)),
-    arrivalTime: new Date(addDays(today, 1).setHours(11, 0)),
-    basePrice: 3200
-  },
-  {
-    flightNumber: 'AI202', airline: 'Air India',
-    source: 'BOM', destination: 'BLR',
-    departureTime: new Date(addDays(today, 2).setHours(18, 0)),
-    arrivalTime: new Date(addDays(today, 2).setHours(20, 0)),
-    basePrice: 2900
-  },
-  {
-    flightNumber: 'VS301', airline: 'Vistara',
-    source: 'DEL', destination: 'CCU',
-    departureTime: new Date(addDays(today, 1).setHours(7, 30)),
-    arrivalTime: new Date(addDays(today, 1).setHours(10, 0)),
-    basePrice: 5500
-  },
-  {
-    flightNumber: 'VS302', airline: 'Vistara',
-    source: 'CCU', destination: 'DEL',
-    departureTime: new Date(addDays(today, 2).setHours(11, 0)),
-    arrivalTime: new Date(addDays(today, 2).setHours(13, 30)),
-    basePrice: 5200
-  },
-  {
-    flightNumber: 'AK401', airline: 'Akasa Air',
-    source: 'BLR', destination: 'HYD',
-    departureTime: new Date(addDays(today, 1).setHours(15, 0)),
-    arrivalTime: new Date(addDays(today, 1).setHours(16, 15)),
-    basePrice: 2200
-  },
-  {
-    flightNumber: 'ID501', airline: 'Indigo',
-    source: 'DEL', destination: 'MAA',
-    departureTime: new Date(addDays(today, 3).setHours(8, 0)),
-    arrivalTime: new Date(addDays(today, 3).setHours(11, 0)),
-    basePrice: 6000
-  }
+  // ---- Outbound ----
+  mkFlight('FW101', 'FlyWise Air', 'BOM', 'DEL', 1, 6, 0, 120, 4500),
+  mkFlight('FW102', 'FlyWise Air', 'BOM', 'DEL', 1, 14, 0, 125, 5200),
+  mkFlight('FW201', 'SkyJet', 'DEL', 'BLR', 1, 8, 0, 150, 3800),
+  mkFlight('FW202', 'SkyJet', 'DEL', 'BLR', 1, 18, 0, 155, 4100),
+  mkFlight('FW301', 'IndiaWings', 'MAA', 'HYD', 2, 10, 0, 80, 2800),
+  mkFlight('FW401', 'AirBharat', 'CCU', 'BOM', 2, 7, 0, 160, 5500),
+  mkFlight('FW501', 'FlyWise Air', 'GOI', 'DEL', 3, 9, 0, 140, 6200),
+  mkFlight('FW601', 'SkyJet', 'BOM', 'GOI', 1, 11, 0, 75, 2500),
+  // ---- Return legs ----
+  mkFlight('FW103', 'FlyWise Air', 'DEL', 'BOM', 3, 9, 0, 120, 4600),
+  mkFlight('FW104', 'FlyWise Air', 'DEL', 'BOM', 3, 18, 0, 125, 5300),
+  mkFlight('FW203', 'SkyJet', 'BLR', 'DEL', 3, 7, 0, 150, 3900),
+  mkFlight('FW204', 'SkyJet', 'BLR', 'DEL', 3, 19, 0, 155, 4200),
+  mkFlight('FW302', 'IndiaWings', 'HYD', 'MAA', 4, 12, 0, 80, 2900),
+  mkFlight('FW402', 'AirBharat', 'BOM', 'CCU', 4, 10, 0, 160, 5600),
+  mkFlight('FW502', 'FlyWise Air', 'DEL', 'GOI', 5, 11, 0, 140, 6100),
+  mkFlight('FW602', 'SkyJet', 'GOI', 'BOM', 3, 13, 0, 75, 2600),
 ];
 
 const pricingRulesData = [
@@ -117,6 +90,13 @@ const pricingRulesData = [
     type: 'SEAT_TYPE',
     condition: { seatType: 'WINDOW' },
     charge: 300
+  },
+  {
+    name: 'Aisle Seat',
+    description: 'Small premium for aisle seats',
+    type: 'SEAT_TYPE',
+    condition: { seatType: 'AISLE' },
+    charge: 150
   },
   {
     name: 'Business Class',

@@ -1,0 +1,109 @@
+.admin-page { padding-bottom: 56px; }
+
+.admin-header {
+  background: linear-gradient(135deg, var(--blue-900) 0%, var(--blue-800) 100%);
+  padding: 28px 0 0;
+  margin-bottom: 28px;
+}
+
+.admin-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.admin-title { font-family: var(--font-display); font-size: 24px; font-weight: 700; color: white; display: flex; align-items: center; gap: 10px; }
+.admin-sub { font-size: 14px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+
+.admin-tabs { display: flex; gap: 2px; }
+
+.admin-tab {
+  padding: 11px 24px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.55);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 10px 10px 0 0;
+  font-family: var(--font-body);
+  transition: all 0.2s;
+}
+.admin-tab.active { background: white; color: var(--blue-900); font-weight: 600; }
+.admin-tab:hover:not(.active) { background: rgba(255,255,255,0.1); color: white; }
+
+.admin-content { padding-top: 0; padding-bottom: 0; }
+
+.admin-stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
+.admin-stat-card { background: white; border-radius: var(--radius-md); border: 1px solid var(--gray-200); padding: 20px; text-align: center; }
+.asc-icon { font-size: 24px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; }
+.asc-img { width: 28px; height: 28px; object-fit: contain; }
+.asc-val { font-family: var(--font-display); font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.asc-label { font-size: 12px; color: var(--gray-400); }
+.ac-blue .asc-val { color: var(--blue-800); }
+.ac-green .asc-val { color: var(--teal-600); }
+.ac-red .asc-val { color: var(--red-400); }
+.ac-amber .asc-val { color: #854F0B; }
+
+.admin-info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.admin-info-card { padding: 22px; }
+.admin-info-card h3 { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--blue-900); margin-bottom: 14px; }
+.admin-info-card ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.admin-info-card li { font-size: 13px; color: var(--gray-600); padding-left: 16px; position: relative; line-height: 1.5; }
+.admin-info-card li::before { content: '•'; position: absolute; left: 0; color: var(--blue-400); }
+.admin-info-card li strong { color: var(--blue-800); }
+
+.add-flight-form { padding: 24px; margin-bottom: 20px; border: 2px solid var(--blue-100); }
+.aff-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.aff-header h3 { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--blue-900); }
+.aff-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.aff-full { grid-column: 1 / -1; }
+.aff-submit { grid-column: 1 / -1; display: flex; gap: 10px; padding-top: 8px; border-top: 1px solid var(--gray-100); margin-top: 4px; }
+.form-hint { display: block; font-size: 11px; color: var(--gray-400); margin-top: 2px; }
+
+.flights-table-wrap, .bookings-table-wrap { padding: 0; overflow: hidden; }
+.admin-table { width: 100%; border-collapse: collapse; }
+.admin-table th {
+  padding: 13px 16px; text-align: left; font-family: var(--font-display); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray-400); background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-100); white-space: nowrap;
+}
+.admin-table td { padding: 13px 16px; font-size: 13px; color: var(--gray-600); border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table tr:hover td { background: var(--gray-50); }
+
+.at-flight-num { font-family: var(--font-display); font-size: 13px; font-weight: 700; color: var(--blue-900); }
+.at-airline { font-size: 11px; color: var(--gray-400); margin-top: 2px; }
+.at-date { font-size: 12px; white-space: nowrap; }
+.at-ref { font-family: var(--font-display); font-size: 12px; font-weight: 700; color: var(--blue-800); letter-spacing: 0.04em; }
+.at-user { font-weight: 500; color: var(--gray-800); }
+.at-email { font-size: 11px; color: var(--gray-400); margin-top: 2px; }
+.at-price { font-family: var(--font-display); font-weight: 700; color: var(--blue-800); }
+.at-actions { display: flex; gap: 6px; }
+
+.pricing-rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.pricing-rule-card { padding: 18px; display: flex; flex-direction: column; gap: 12px; transition: opacity 0.2s; }
+.rule-inactive { opacity: 0.55; }
+.prc-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.prc-title-row { display: flex; align-items: flex-start; gap: 10px; }
+.prc-icon { font-size: 22px; line-height: 1; margin-top: 2px; }
+.prc-name { font-weight: 600; font-size: 15px; font-family: var(--font-display); color: var(--blue-900); }
+.prc-desc { font-size: 13px; color: var(--gray-400); margin-top: 2px; }
+.prc-badges { display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
+.prc-body { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--gray-50); border-radius: 8px; font-size: 13px; }
+.prc-detail { display: flex; justify-content: space-between; align-items: center; }
+.prc-detail span { color: var(--gray-600); }
+.prc-charge { color: #d97706; }
+.prc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+
+.admin-empty { text-align: center; padding: 40px 24px; color: var(--gray-400); }
+.admin-empty .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.admin-empty .empty-hint { font-size: 12px; margin-top: 8px; }
+
+.admin-loading { display: flex; justify-content: center; padding: 48px; }
+
+@media (max-width: 1024px) {
+  .admin-stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .aff-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .admin-stats-grid { grid-template-columns: 1fr 1fr; }
+  .admin-info-cards { grid-template-columns: 1fr; }
+  .aff-grid { grid-template-columns: 1fr 1fr; }
+  .flights-table-wrap, .bookings-table-wrap { overflow-x: auto; }
+}

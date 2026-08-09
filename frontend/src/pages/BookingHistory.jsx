@@ -1,16 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { QRCodeCanvas } from 'qrcode.react';
 import { getUserBookings, cancelBooking } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import './BookingHistory.css';
 
-const fmt = (date) => new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-const fmtTime = (date) => new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtTime = (d) => new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+const fmtDur = (dep, arr) => {
+  const mins = Math.round((new Date(arr) - new Date(dep)) / 60000);
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+};
 
-// Group bookings by groupId (multi-seat and round-trip checkouts share one).
-// Bookings created before this field existed fall back to the old
-// same-flight-within-60s heuristic so nothing "disappears" from history.
+const statusColors = { CONFIRMED: 'badge-green', CANCELLED: 'badge-red' };
+
+// Group per-seat Booking docs by groupId (multi-seat / round-trip checkouts
+// share one). Legacy bookings without a groupId fall back to a
+// same-flight-within-60s heuristic.
 const groupBookings = (bookings) => {
   const groups = [];
   const byGroupId = {};
@@ -35,11 +43,9 @@ const groupBookings = (bookings) => {
     if (match) match.bookings.push(booking);
     else groups.push({ groupId: null, bookings: [booking] });
   }
-
   return groups;
 };
 
-// Is this a round-trip group? (two different flights sharing one groupId)
 const legsOf = (group) => {
   const byFlight = {};
   group.bookings.forEach(b => {
@@ -49,13 +55,6 @@ const legsOf = (group) => {
   });
   return Object.values(byFlight);
 };
-
-const statusConfig = {
-  CONFIRMED: { label: 'Confirmed', bg: '#d1fae5', color: '#065f46', bar: '#10b981' },
-  CANCELLED: { label: 'Cancelled', bg: '#fee2e2', color: '#991b1b', bar: '#ef4444' }
-};
-
-const badgeStyle = { padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600 };
 
 const downloadTicket = async (elementId, filename) => {
   const input = document.getElementById(elementId);
@@ -73,280 +72,307 @@ const LegTicket = ({ leg, ticketId }) => {
   const flight = leg[0].flightId;
   if (!flight) return null;
   return (
-    <div id={ticketId} style={{ position: 'absolute', left: -9999, top: 0, width: 700, background: 'white', padding: 32, fontFamily: 'DM Sans, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0f172a', paddingBottom: 16, marginBottom: 16 }}>
+    <div id={ticketId} style={{ position: 'absolute', left: -9999, top: 0 }} className="ticket-container">
+      <div className="ticket-header">
         <div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 22 }}>✈ SkyVoyage Boarding Pass</div>
-          <div style={{ fontSize: 13, color: '#64748b' }}>Journey Date: {fmt(flight.departureTime)}</div>
+          <div className="ticket-title">✈ SkyVoyage Boarding Pass</div>
+          <div className="ticket-date">Journey Date: {fmtDate(flight.departureTime)}</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11, color: '#64748b' }}>Booking Ref</div>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>{leg[0].bookingReference}</div>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 26 }}>{flight.source}</div>
-          <div style={{ fontSize: 13, color: '#64748b' }}>{fmtTime(flight.departureTime)}</div>
-        </div>
-        <div style={{ fontSize: 24 }}>✈</div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 26 }}>{flight.destination}</div>
-          <div style={{ fontSize: 13, color: '#64748b' }}>{fmtTime(flight.arrivalTime)}</div>
+        <div className="ticket-ref">
+          <div>Booking Ref</div>
+          <strong>{leg[0].bookingReference}</strong>
         </div>
       </div>
 
-      <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: 14, marginBottom: 14 }}>
-        <h3 style={{ fontSize: 13, color: '#64748b', textTransform: 'uppercase', marginBottom: 8 }}>Passengers</h3>
-        {leg.map((b, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}>
-            <span>{b.passengerName} {b.passengerGender ? `(${b.passengerGender}, ${b.passengerAge})` : ''}</span>
-            <span style={{ fontWeight: 700 }}>{b.seatNumber}</span>
+      <div className="ticket-route">
+        <div className="ticket-city"><div className="ticket-code">{flight.source}</div><div className="ticket-time">{fmtTime(flight.departureTime)}</div></div>
+        <div className="ticket-arrow">✈</div>
+        <div className="ticket-city"><div className="ticket-code">{flight.destination}</div><div className="ticket-time">{fmtTime(flight.arrivalTime)}</div></div>
+      </div>
+
+      <div className="ticket-divider" />
+
+      <div className="ticket-section">
+        <h3>PASSENGERS</h3>
+        {leg.map((p, i) => (
+          <div key={i} className="ticket-passenger">
+            <span>{p.passengerName} {p.passengerGender ? `(${p.passengerGender}, ${p.passengerAge})` : ''}</span>
+            <span>{p.seatNumber}</span>
           </div>
         ))}
       </div>
 
-      <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div style={{ fontSize: 12, color: '#64748b' }}>
-          Flight: {flight.flightNumber}<br />Airline: {flight.airline}
+      <div className="ticket-section">
+        <h3>PRICE DETAILS</h3>
+        {(() => {
+          const base = leg.reduce((s, b) => s + b.priceBreakdown.basePrice, 0);
+          const taxes = leg.reduce((s, b) => s + b.priceBreakdown.taxes, 0);
+          const addOnTotal = leg.reduce((s, b) => s + (b.priceBreakdown.addOnTotal || 0), 0);
+          const total = leg.reduce((s, b) => s + b.priceBreakdown.finalPrice, 0);
+          return (
+            <>
+              <div className="ticket-price-row"><span>Base Fare</span><span>₹{base}</span></div>
+              <div className="ticket-price-row"><span>Taxes</span><span>₹{taxes}</span></div>
+              {addOnTotal > 0 && <div className="ticket-price-row"><span>Add-ons</span><span>₹{addOnTotal}</span></div>}
+              <div className="ticket-total">Total ₹{total}</div>
+            </>
+          );
+        })()}
+      </div>
+
+      <div className="ticket-footer">
+        <div className="ticket-note">Flight: {flight.flightNumber}<br />Airline: {flight.airline}</div>
+        <div className="ticket-qr">
+          <QRCodeCanvas value={JSON.stringify({ ref: leg[0].bookingReference, name: leg[0].passengerName, flight: flight.flightNumber, from: flight.source, to: flight.destination, date: flight.departureTime })} size={80} />
         </div>
-        <QRCodeCanvas
-          value={JSON.stringify({
-            ref: leg[0].bookingReference,
-            name: leg[0].passengerName,
-            flight: flight.flightNumber,
-            from: flight.source,
-            to: flight.destination,
-            date: flight.departureTime
-          })}
-          size={72}
-        />
       </div>
     </div>
   );
 };
 
-const BookingHistory = () => {
-  const location = useLocation();
-  const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [cancelling, setCancelling] = useState(null);
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-  const [expanded, setExpanded] = useState({});
+const BookingCard = ({ group, onCancel }) => {
+  const [cancellingId, setCancellingId] = useState(null);
+  const [expanded, setExpanded] = useState(false);
 
-  useEffect(() => {
-    const { newBookings, newBooking } = location.state || {};
-    if (newBookings?.length > 0) {
-      const refs = newBookings.map(b => b.bookingReference).join(', ');
-      setSuccessMsg(`${newBookings.length} booking${newBookings.length > 1 ? 's' : ''} confirmed! Ref${newBookings.length > 1 ? 's' : ''}: ${refs}`);
-    } else if (newBooking) {
-      setSuccessMsg(`Booking ${newBooking.bookingReference} confirmed!`);
-    }
-    fetchBookings();
-  }, [location.state]);
-
-  const fetchBookings = () => {
-    setLoading(true);
-    getUserBookings()
-      .then(res => setBookings(res.data.bookings || []))
-      .catch(() => setError('Failed to load bookings'))
-      .finally(() => setLoading(false));
-  };
+  const legs = legsOf(group);
+  const isRoundTrip = legs.length > 1;
+  const allCancelled = group.bookings.every(b => b.status === 'CANCELLED');
+  const someCancelled = group.bookings.some(b => b.status === 'CANCELLED');
+  const groupStatus = allCancelled ? 'CANCELLED' : 'CONFIRMED';
+  const groupTotal = group.bookings.reduce((s, b) => s + (b.priceBreakdown?.finalPrice || 0), 0);
+  const key = group.groupId || group.bookings[0]._id;
+  const allAddOns = group.bookings.flatMap(b => b.addOns || []);
 
   const handleCancel = async (bookingId) => {
     if (!window.confirm('Are you sure you want to cancel this booking?')) return;
-    setCancelling(bookingId);
     try {
-      await cancelBooking({ bookingId, reason: 'Cancelled by user' });
+      setCancellingId(bookingId);
+      await onCancel(bookingId);
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  return (
+    <div className={`booking-card ${groupStatus === 'CANCELLED' ? 'cancelled' : ''}`}>
+      <div className="bc-top">
+        <div className="bc-ref-row">
+          <div className="bc-ref">
+            <span className="bc-ref-label">Booking Ref{group.bookings.length > 1 ? 's' : ''}</span>
+            <span className="bc-ref-num">{group.bookings.map(b => b.bookingReference).join(', ')}</span>
+          </div>
+          <span className={`badge ${statusColors[groupStatus]}`}>{groupStatus}</span>
+          {isRoundTrip && <span className="badge badge-blue">Round Trip</span>}
+          {someCancelled && !allCancelled && <span className="badge badge-amber">Partial</span>}
+        </div>
+
+        {legs.map((leg, li) => {
+          const f = leg[0].flightId;
+          if (!f) return null;
+          return (
+            <div className="bc-flight-row" key={li}>
+              <div className="bc-airline-chip">{isRoundTrip ? (li === 0 ? 'OUT' : 'RET') : f.airline.slice(0, 2).toUpperCase()}</div>
+              <div className="bc-route-wrap">
+                <div className="bc-city-block">
+                  <div className="bc-time">{fmtTime(f.departureTime)}</div>
+                  <div className="bc-code">{f.source}</div>
+                </div>
+                <div className="bc-mid">
+                  <div className="bc-dur">{fmtDur(f.departureTime, f.arrivalTime)}</div>
+                  <div className="bc-line">── ✈ ──</div>
+                  <div className="bc-nonstop">Non-stop</div>
+                </div>
+                <div className="bc-city-block right">
+                  <div className="bc-time">{fmtTime(f.arrivalTime)}</div>
+                  <div className="bc-code">{f.destination}</div>
+                </div>
+              </div>
+              {li === 0 && (
+                <div className="bc-price-block">
+                  <div className="bc-price">₹{groupTotal.toLocaleString('en-IN')}</div>
+                  <div className="bc-price-label">Total Paid</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className="bc-meta-row">
+          <span className="bc-meta-item">📅 {fmtDate(group.bookings[0].createdAt)}</span>
+          <span className="bc-meta-item">💺 {group.bookings.map(b => b.seatNumber).join(', ')}</span>
+          <span className="bc-meta-item">👥 {group.bookings.length} passenger{group.bookings.length > 1 ? 's' : ''}</span>
+        </div>
+      </div>
+
+      <div className="bc-actions">
+        <button className="btn btn-ghost btn-sm" onClick={() => setExpanded(!expanded)}>
+          {expanded ? '▲ Hide Details' : '▼ View Details'}
+        </button>
+        <div className="bc-actions-right">
+          {legs.map((leg, li) => (
+            <button key={li} className="btn btn-primary btn-sm" onClick={() => downloadTicket(`ticket-${key}-${li}`, `SkyVoyage_Ticket_${leg[0].bookingReference}.pdf`)}>
+              Download {isRoundTrip ? (li === 0 ? 'Outbound' : 'Return') : ''} Ticket
+            </button>
+          ))}
+          {groupStatus === 'CONFIRMED' && group.bookings.some(b => b.status === 'CONFIRMED') && (
+            group.bookings.filter(b => b.status === 'CONFIRMED').map(b => (
+              <button key={b._id} className="btn btn-danger btn-sm" onClick={() => handleCancel(b._id)} disabled={cancellingId === b._id}>
+                {cancellingId === b._id ? 'Cancelling...' : `Cancel ${b.seatNumber}`}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="bc-expanded">
+          <div className="bc-exp-section">
+            <div className="bc-exp-title">Passengers</div>
+            <div className="bc-passengers">
+              {group.bookings.map((p, i) => (
+                <div key={i} className="bc-passenger">
+                  <span className="bc-pax-num">{i + 1}</span>
+                  <span className="bc-pax-name">{p.passengerName}</span>
+                  {p.passengerAge && <span className="bc-pax-age">Age {p.passengerAge}</span>}
+                  {p.passengerGender && <span className="bc-pax-gender">{p.passengerGender}</span>}
+                  <span className="badge badge-blue">{p.seatNumber}</span>
+                </div>
+              ))}
+            </div>
+            {allAddOns.length > 0 && (
+              <p style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 10 }}>
+                <strong>Add-ons:</strong> {allAddOns.map(a => `${a.name} (₹${a.price})`).join(', ')}
+              </p>
+            )}
+          </div>
+
+          <div className="bc-exp-section">
+            <div className="bc-exp-title">Price Breakdown</div>
+            <div className="bc-price-table">
+              <div className="bc-pr"><span>Base Fare</span><span>₹{group.bookings.reduce((s, b) => s + b.priceBreakdown.basePrice, 0)}</span></div>
+              <div className="bc-pr"><span>Taxes &amp; GST</span><span>₹{group.bookings.reduce((s, b) => s + b.priceBreakdown.taxes, 0)}</span></div>
+              {allAddOns.length > 0 && <div className="bc-pr"><span>Add-ons</span><span>₹{group.bookings.reduce((s, b) => s + (b.priceBreakdown.addOnTotal || 0), 0)}</span></div>}
+              <div className="bc-pr total"><span>Total</span><span>₹{groupTotal.toLocaleString('en-IN')}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {legs.map((leg, li) => <LegTicket key={li} leg={leg} ticketId={`ticket-${key}-${li}`} />)}
+    </div>
+  );
+};
+
+const BookingHistory = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('ALL');
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  useEffect(() => {
+    const { newBookings } = location.state || {};
+    if (newBookings?.length > 0) {
+      setSuccessMsg(`${newBookings.length} booking${newBookings.length > 1 ? 's' : ''} confirmed!`);
+    }
+    fetchBookings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchBookings = async () => {
+    try {
+      setLoading(true);
+      const res = await getUserBookings();
+      setBookings(res.data.bookings);
+    } catch {
+      setError('Failed to load bookings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = async (id) => {
+    try {
+      await cancelBooking({ bookingId: id, reason: 'Cancelled by user' });
+      setSuccessMsg('Booking cancelled. Seat released.');
       fetchBookings();
-      setSuccessMsg('Booking cancelled. The seat is now available again.');
-      setTimeout(() => setSuccessMsg(''), 5000);
     } catch (err) {
       setError(err.response?.data?.message || 'Cancellation failed');
-    } finally {
-      setCancelling(null);
     }
   };
 
   const groups = groupBookings(bookings);
+  const filteredGroups = groups.filter(g => {
+    if (filter === 'ALL') return true;
+    const allCancelled = g.bookings.every(b => b.status === 'CANCELLED');
+    return filter === 'CANCELLED' ? allCancelled : !allCancelled;
+  });
+
+  const stats = {
+    total: groups.length,
+    confirmed: groups.filter(g => !g.bookings.every(b => b.status === 'CANCELLED')).length,
+    cancelled: groups.filter(g => g.bookings.every(b => b.status === 'CANCELLED')).length,
+    spent: bookings.filter(b => b.status === 'CONFIRMED').reduce((s, b) => s + (b.priceBreakdown?.finalPrice || 0), 0)
+  };
 
   return (
-    <div className="container" style={{ padding: '32px 24px' }}>
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 28, marginBottom: 4 }}>My Bookings</h1>
-        <p style={{ color: '#64748b' }}>View, download tickets for, and manage all your flight bookings</p>
+    <div className="page-content dashboard-page">
+      <div className="dashboard-header">
+        <div className="section">
+          <div className="dash-welcome">
+            <div className="dash-avatar">{user?.name?.charAt(0).toUpperCase()}</div>
+            <div>
+              <h1 className="dash-title">My Trips</h1>
+              <p className="dash-sub">Welcome back, {user?.name?.split(' ')[0]}!</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {successMsg && (
-        <div className="fade-in" style={{ background: '#d1fae5', border: '1px solid #6ee7b7', borderRadius: 10, padding: '12px 20px', marginBottom: 20, color: '#065f46', fontWeight: 600 }}>
-          {successMsg}
-        </div>
-      )}
-      {error && (
-        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#991b1b' }}>{error}</div>
-      )}
-      {loading && (
-        <div style={{ textAlign: 'center', padding: 60 }}>
-          <div className="spin" style={{ width: 36, height: 36, border: '3px solid #e2e8f0', borderTopColor: '#0ea5e9', borderRadius: '50%', margin: '0 auto' }} />
-        </div>
-      )}
-      {!loading && bookings.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 80 }}>
-          <div style={{ fontSize: 64, marginBottom: 16 }}>✈️</div>
-          <h3 style={{ marginBottom: 8 }}>No bookings yet</h3>
-          <p style={{ color: '#64748b', marginBottom: 24 }}>Your booking history will appear here</p>
-          <a href="/" className="btn btn-primary">Search Flights</a>
-        </div>
-      )}
+      <div className="section dashboard-content">
+        {successMsg && <div className="fade-in" style={{ background: 'var(--teal-50)', color: 'var(--teal-600)', borderRadius: 'var(--radius-md)', padding: '12px 20px', marginBottom: 20, fontWeight: 600 }}>{successMsg}</div>}
+        {error && <div style={{ background: 'var(--red-50)', color: 'var(--red-600)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: 16 }}>{error}</div>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {groups.map((group, gi) => {
-          const legs = legsOf(group);
-          const isRoundTrip = legs.length > 1;
-          const allCancelled = group.bookings.every(b => b.status === 'CANCELLED');
-          const someCancelled = group.bookings.some(b => b.status === 'CANCELLED');
-          const groupStatus = allCancelled ? 'CANCELLED' : 'CONFIRMED';
-          const status = statusConfig[groupStatus];
-          const groupTotal = group.bookings.reduce((sum, b) => sum + (b.priceBreakdown?.finalPrice || 0), 0);
-          const key = group.groupId || `legacy-${gi}`;
-          const isExpanded = !!expanded[key];
-          const allAddOns = group.bookings.flatMap(b => b.addOns || []);
-
-          return (
-            <div key={key} className="card fade-in" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ height: 4, background: status.bar }} />
-              <div style={{ padding: '20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                      <span style={{ ...badgeStyle, background: status.bg, color: status.color }}>{status.label}</span>
-                      {isRoundTrip && <span style={{ ...badgeStyle, background: '#e0f2fe', color: '#0369a1' }}>Round Trip</span>}
-                      {someCancelled && !allCancelled && <span style={{ ...badgeStyle, background: '#fef3c7', color: '#92400e' }}>Partial</span>}
-                      <span style={{ fontSize: 12, color: '#94a3b8' }}>Booked {fmt(group.bookings[0].createdAt)}</span>
-                    </div>
-
-                    {legs.map((leg, li) => {
-                      const flight = leg[0].flightId;
-                      if (!flight) return <div key={li} style={{ fontSize: 13, color: '#94a3b8' }}>Flight deleted</div>;
-                      return (
-                        <div key={li} style={{ marginBottom: li < legs.length - 1 ? 8 : 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: isRoundTrip ? 15 : 20 }}>
-                            {isRoundTrip && <span style={{ fontSize: 11, color: '#0ea5e9', fontWeight: 700, marginRight: 6 }}>{li === 0 ? 'OUT' : 'RET'}</span>}
-                            {flight.source} → {flight.destination}
-                          </div>
-                          <div style={{ fontSize: 12, color: '#64748b' }}>
-                            {flight.airline} · {flight.flightNumber} · {fmt(flight.departureTime)} · {fmtTime(flight.departureTime)} → {fmtTime(flight.arrivalTime)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-                      {group.bookings.length} seat{group.bookings.length > 1 ? 's' : ''}
-                    </div>
-                    <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'Syne, sans-serif' }}>₹{groupTotal.toLocaleString('en-IN')}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>total</div>
-                  </div>
-                </div>
-
-                {/* Seat rows */}
-                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
-                  {group.bookings.map((booking, bi) => {
-                    const bStatus = statusConfig[booking.status] || statusConfig.CONFIRMED;
-                    const isLast = bi === group.bookings.length - 1;
-                    return (
-                      <div key={booking._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '10px 0', borderBottom: isLast ? 'none' : '1px solid #f8fafc' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                          <div style={{
-                            background: booking.status === 'CANCELLED' ? '#f1f5f9' : '#dbeafe',
-                            color: booking.status === 'CANCELLED' ? '#94a3b8' : '#1d4ed8',
-                            fontWeight: 800, fontSize: 14, borderRadius: 8, padding: '5px 12px',
-                            fontFamily: 'Syne, sans-serif', minWidth: 50, textAlign: 'center',
-                            textDecoration: booking.status === 'CANCELLED' ? 'line-through' : 'none'
-                          }}>
-                            {booking.seatNumber}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: booking.status === 'CANCELLED' ? '#94a3b8' : '#0f172a' }}>{booking.passengerName}</div>
-                            <div style={{ fontSize: 11, color: '#94a3b8' }}>{booking.bookingReference}</div>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                          <span style={{ ...badgeStyle, background: bStatus.bg, color: bStatus.color, fontSize: 11 }}>{bStatus.label}</span>
-                          <div style={{ fontSize: 14, fontWeight: 700, minWidth: 76, textAlign: 'right' }}>₹{booking.priceBreakdown?.finalPrice?.toLocaleString('en-IN')}</div>
-                          {booking.status === 'CONFIRMED' && (
-                            <button onClick={() => handleCancel(booking._id)} disabled={cancelling === booking._id} className="btn btn-danger" style={{ fontSize: 11, padding: '4px 12px' }}>
-                              {cancelling === booking._id ? '...' : 'Cancel'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {allAddOns.length > 0 && (
-                  <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>
-                    <strong>Add-ons:</strong> {allAddOns.map(a => `${a.name} (₹${a.price})`).join(', ')}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}>
-                    {isExpanded ? '▲ Hide price breakdown' : '▼ View price breakdown'}
-                  </button>
-                  {legs.map((leg, li) => (
-                    <button
-                      key={li}
-                      className="btn btn-outline"
-                      style={{ fontSize: 12, padding: '6px 12px' }}
-                      onClick={() => downloadTicket(`ticket-${key}-${li}`, `SkyVoyage_Ticket_${leg[0].bookingReference}.pdf`)}
-                    >
-                      Download {isRoundTrip ? (li === 0 ? 'Outbound' : 'Return') : ''} Ticket
-                    </button>
-                  ))}
-                </div>
-
-                {isExpanded && (
-                  <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14, borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
-                    {group.bookings.map(b => (
-                      <div key={b._id}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>Seat {b.seatNumber} — {b.passengerName}</div>
-                        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                          {[
-                            { label: 'Base', value: b.priceBreakdown.basePrice },
-                            ...(b.priceBreakdown.demandCharge ? [{ label: 'Demand', value: b.priceBreakdown.demandCharge }] : []),
-                            ...(b.priceBreakdown.lateBookingCharge ? [{ label: 'Late Booking', value: b.priceBreakdown.lateBookingCharge }] : []),
-                            ...(b.priceBreakdown.seatTypeCharge ? [{ label: 'Seat Type', value: b.priceBreakdown.seatTypeCharge }] : []),
-                            ...(b.priceBreakdown.seatClassCharge ? [{ label: 'Cabin Class', value: b.priceBreakdown.seatClassCharge }] : []),
-                            { label: 'Taxes', value: b.priceBreakdown.taxes },
-                            ...(b.priceBreakdown.addOnTotal ? [{ label: 'Add-ons', value: b.priceBreakdown.addOnTotal }] : []),
-                            ...(b.priceBreakdown.discount ? [{ label: 'Discount', value: -b.priceBreakdown.discount }] : []),
-                            { label: 'Total', value: b.priceBreakdown.finalPrice, bold: true }
-                          ].map(item => (
-                            <div key={item.label}>
-                              <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>{item.label}</div>
-                              <div style={{ fontSize: 14, fontWeight: item.bold ? 800 : 600, color: item.bold ? '#0ea5e9' : '#0f172a' }}>₹{item.value?.toLocaleString('en-IN')}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Off-screen printable tickets, one per leg */}
-              {legs.map((leg, li) => (
-                <LegTicket key={li} leg={leg} ticketId={`ticket-${key}-${li}`} />
-              ))}
+        <div className="dash-stats">
+          {[
+            ['Total Trips', stats.total, '/plane.png'],
+            ['Confirmed', stats.confirmed, '/yes.png'],
+            ['Cancelled', stats.cancelled, '/cancel.png'],
+            ['Total Spent', `₹${stats.spent.toLocaleString('en-IN')}`, '/flying-money.png'],
+          ].map(([label, val, icon]) => (
+            <div key={label} className="dash-stat-card">
+              <img src={icon} alt={label} className="asc-img" />
+              <div className="dash-stat-val">{val}</div>
+              <div className="dash-stat-label">{label}</div>
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        <div className="dash-filters">
+          {['ALL', 'CONFIRMED', 'CANCELLED'].map(f => (
+            <button key={f} className={`filter-tab${filter === f ? ' active' : ''}`} onClick={() => setFilter(f)}>
+              {f === 'ALL' ? 'All Trips' : f === 'CONFIRMED' ? 'Upcoming' : 'Cancelled'}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="dash-loading"><div className="spinner spinner-lg" /><p>Loading your trips...</p></div>
+        ) : filteredGroups.length === 0 ? (
+          <div className="dash-empty">
+            <div className="dash-empty-icon">✈️</div>
+            <h3>{filter === 'ALL' ? 'No trips yet' : `No ${filter.toLowerCase()} bookings`}</h3>
+            <p>Ready for your next adventure?</p>
+            <button className="btn btn-primary" onClick={() => navigate('/')}>Search Flights</button>
+          </div>
+        ) : (
+          <div className="booking-list">
+            {filteredGroups.map((g, i) => <BookingCard key={g.groupId || i} group={g} onCancel={handleCancel} />)}
+          </div>
+        )}
       </div>
     </div>
   );

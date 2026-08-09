@@ -5,7 +5,7 @@ const CITIES = [
   { code: 'CCU', name: 'Kolkata' },
   { code: 'MAA', name: 'Chennai' },
   { code: 'HYD', name: 'Hyderabad' },
-  { code: 'AMD', name: 'Ahmedabad' },
+  { code: 'GOI', name: 'Goa' },
 ];
 
 module.exports = CITIES;

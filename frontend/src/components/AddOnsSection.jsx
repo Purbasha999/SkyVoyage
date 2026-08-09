@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAddOns } from '../services/api';
+import './AddOnsSection.css';
 
 const TABS = [
   { key: 'meal', label: 'Meals' },
@@ -27,81 +28,54 @@ const AddOnsSection = ({ selected, setSelected }) => {
     setSelected(exists ? safeSelected.filter(i => i._id !== item._id) : [...safeSelected, item]);
   };
 
-  const tabBtn = (active) => ({
-    padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600,
-    fontFamily: 'inherit', cursor: 'pointer',
-    background: active ? '#0ea5e9' : '#f1f5f9', color: active ? 'white' : '#64748b'
-  });
-
-  const filterBtn = (active, color) => ({
-    padding: '6px 14px', borderRadius: 999, border: `1.5px solid ${active ? color : '#e2e8f0'}`,
-    fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
-    background: active ? `${color}18` : 'white', color: active ? color : '#64748b'
-  });
-
   return (
-    <div className="card" style={{ padding: 20 }}>
-      <h3 style={{ fontSize: 16, marginBottom: 14 }}>Add-ons</h3>
+    <div className="addons-container card">
+      <h3 className="sc-title">Add-ons</h3>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      <div className="addons-tabs">
         {TABS.map(t => (
-          <button key={t.key} style={tabBtn(tab === t.key)} onClick={() => setTab(t.key)}>{t.label}</button>
+          <button key={t.key} className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
 
       {tab === 'meal' && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <button style={filterBtn(veg === true, '#10b981')} onClick={() => setVeg(true)}>● Veg</button>
-          <button style={filterBtn(veg === false, '#ef4444')} onClick={() => setVeg(false)}>● Non-Veg</button>
-          <button style={filterBtn(veg === null, '#64748b')} onClick={() => setVeg(null)}>All</button>
+        <div className="addons-filter">
+          <button className={`filter-btn ${veg === true ? 'active veg' : ''}`} onClick={() => setVeg(true)}>
+            <span className="dot veg" /> Veg
+          </button>
+          <button className={`filter-btn ${veg === false ? 'active nonveg' : ''}`} onClick={() => setVeg(false)}>
+            <span className="dot nonveg" /> Non-Veg
+          </button>
+          <button className={`filter-btn ${veg === null ? 'active' : ''}`} onClick={() => setVeg(null)}>All</button>
         </div>
       )}
 
-      {addons.length === 0 && (
-        <p style={{ fontSize: 13, color: '#94a3b8' }}>No {tab} add-ons available right now.</p>
-      )}
+      {addons.length === 0 && <p style={{ fontSize: 13, color: 'var(--gray-400)' }}>No {tab} add-ons available right now.</p>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="addons-list">
         {addons.map(item => {
           const isSelected = !!safeSelected.find(i => i._id === item._id);
           return (
-            <div
-              key={item._id}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px',
-                borderRadius: 10, border: `1.5px solid ${isSelected ? '#0ea5e9' : '#e2e8f0'}`,
-                background: isSelected ? '#f0f9ff' : 'white'
-              }}
-            >
-              {item.type === 'meal' ? (
-                <span
-                  style={{
-                    width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
-                    background: item.veg ? '#10b981' : '#ef4444'
-                  }}
-                  title={item.veg ? 'Veg' : 'Non-Veg'}
-                />
-              ) : (
-                <div style={{
-                  width: 40, height: 32, borderRadius: 8, background: '#f1f5f9',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 700, color: '#0f172a', flexShrink: 0
-                }}>
-                  {item.baggageWeight}kg
-                </div>
-              )}
-
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{item.name}</div>
-                <div style={{ fontSize: 12, color: '#64748b' }}>₹{item.price} · {item.description}</div>
+            <div key={item._id} className={`addon-row ${isSelected ? 'selected' : ''}`}>
+              <div className="addon-img-wrap">
+                {item.type === 'meal' ? (
+                  <>
+                    <img src={item.image} alt="" />
+                    <span className={`veg-dot ${item.veg ? 'veg' : 'nonveg'}`} />
+                  </>
+                ) : (
+                  <div className="baggage-box">{item.baggageWeight}kg</div>
+                )}
               </div>
 
-              <button
-                onClick={() => toggleAdd(item)}
-                className={isSelected ? 'btn btn-outline' : 'btn btn-primary'}
-                style={{ fontSize: 12, padding: '6px 14px' }}
-              >
-                {isSelected ? 'Added ✓' : 'Add'}
+              <div className="addon-info">
+                <div className="addon-name">{item.name}</div>
+                <div className="addon-price">₹{item.price}</div>
+                <div className="addon-more">{item.description}</div>
+              </div>
+
+              <button className={`addon-btn ${isSelected ? 'added' : ''}`} onClick={() => toggleAdd(item)}>
+                {isSelected ? 'Added' : 'Add'}
               </button>
             </div>
           );

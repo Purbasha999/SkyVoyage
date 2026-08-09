@@ -35,10 +35,16 @@ exports.searchFlights = async (req, res) => {
       flights.map(async (flight) => {
         const availableSeats = await Seat.countDocuments({ flightId: flight._id, status: 'AVAILABLE' });
         const totalSeats = await Seat.countDocuments({ flightId: flight._id });
+        // Indicative price for the result card: flight-level surcharges only
+        // (no seats chosen yet), so demand/last-minute badges can show up
+        // front the way FlyWise's flight cards do.
+        const pricing = await calculatePrice(flight, [], parseInt(passengers));
         return {
           ...flight.toObject(),
           availableSeats,
-          totalSeats
+          totalSeats,
+          dynamicPrice: pricing.finalPrice,
+          priceBreakdown: pricing
         };
       })
     );

@@ -2,6 +2,33 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CITIES from '../constants/cities';
 import { useBooking } from '../context/BookingContext';
+import './Home.css';
+
+const cityName = (code) => CITIES.find(c => c.code === code)?.name || code;
+
+const DEALS = [
+  { from: 'BOM', to: 'GOI', price: '₹2,500', tag: 'Flash Sale', color: 'linear-gradient(135deg,#1a3a6e,#2d7dd2)' },
+  { from: 'DEL', to: 'BLR', price: '₹3,800', tag: 'Weekend Deal', color: 'linear-gradient(135deg,#0f4c75,#1b6ca8,#44b3c4)' },
+  { from: 'MAA', to: 'HYD', price: '₹2,800', tag: 'Monsoon Fare', color: 'linear-gradient(135deg,#1d5c63,#0f8b8d,#6bc5c7)' },
+  { from: 'CCU', to: 'BOM', price: '₹5,500', tag: 'Early Bird', color: 'linear-gradient(135deg,#4a1060,#7b1fa2,#ce93d8)' },
+  { from: 'DEL', to: 'GOI', price: '₹6,100', tag: 'Holiday Saver', color: 'linear-gradient(135deg,#b5451b,#e07a5f,#f4a261)' },
+];
+
+const PROMOS = [
+  { title: 'Student Special', sub: 'Exclusively on SkyVoyage web & app', perks: [['10%', 'Off with STUDENT10'], ['Zero', 'Change fee'], ['24/7', 'Support']], color: '#185FA5' },
+  { title: 'Early Bird Offer', sub: 'Book ahead and save big', perks: [['₹500', 'Instant savings with FLY500'], ['Free', 'Seat selection'], ['2x', 'Reward points']], color: '#0F6E56' },
+  { title: 'SkyVoyage Plus', sub: 'Perks for frequent flyers', perks: [['15%', 'Off with WELCOME15'], ['Priority', 'Boarding'], ['Lounge', 'Access']], color: '#5C1AAB' },
+];
+
+const DESTINATIONS = [
+  { code: 'BOM', name: 'Mumbai', image: 'https://images.unsplash.com/photo-1666843527155-14ec5f016802?w=1600&auto=format&fit=crop&q=60', price: '₹2,500' },
+  { code: 'DEL', name: 'Delhi', image: 'https://images.unsplash.com/photo-1597040663342-45b6af3d91a5?w=1600&auto=format&fit=crop&q=60', price: '₹3,800', isNew: true },
+  { code: 'GOI', name: 'Goa', image: 'https://images.unsplash.com/photo-1614082242765-7c98ca0f3df3?w=1600&auto=format&fit=crop&q=60', price: '₹2,500' },
+  { code: 'BLR', name: 'Bangalore', image: 'https://images.unsplash.com/photo-1698332137428-3c4296198e8f?w=1600&auto=format&fit=crop&q=60', price: '₹3,800', isNew: true },
+  { code: 'HYD', name: 'Hyderabad', image: 'https://images.unsplash.com/photo-1657981630164-769503f3a9a8?w=1600&auto=format&fit=crop&q=60', price: '₹2,800' },
+  { code: 'MAA', name: 'Chennai', image: 'https://plus.unsplash.com/premium_photo-1697730420879-dc2a8dbaa31f?w=1600&auto=format&fit=crop&q=60', price: '₹2,800' },
+  { code: 'CCU', name: 'Kolkata', image: 'https://images.unsplash.com/photo-1589041127168-9b1915731dc3?w=1600&auto=format&fit=crop&q=60', price: '₹5,500', isNew: true },
+];
 
 const Home = () => {
   const navigate = useNavigate();
@@ -11,10 +38,9 @@ const Home = () => {
   const dayAfter = new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0];
 
   const [tripType, setTripType] = useState('oneway');
-  const [form, setForm] = useState({
-    source: 'DEL', destination: 'BOM', date: tomorrow, returnDate: dayAfter, passengers: 1
-  });
+  const [form, setForm] = useState({ source: 'DEL', destination: 'BOM', date: tomorrow, returnDate: dayAfter, passengers: 1 });
   const [error, setError] = useState('');
+  const [promoIdx, setPromoIdx] = useState(0);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -36,191 +62,194 @@ const Home = () => {
     }
   };
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const swap = () => setForm(f => ({ ...f, source: f.destination, destination: f.source }));
+  const quickSearch = (from, to) => navigate(`/flights?source=${from}&destination=${to}&date=${tomorrow}&passengers=1`);
 
-  const popularDestinations = [
-            {
-              code: 'BOM', name: 'Mumbai', tagline: 'City of Dreams',
-              img: 'https://images.unsplash.com/photo-1660145416818-b9a2b1a1f193?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
-            },
-            {
-              code: 'DEL', name: 'Delhi', tagline: 'Heart of India',
-              img: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?q=80&w=1470&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
-            },
-            {
-              code: 'BLR', name: 'Bangalore', tagline: 'Silicon Valley of India',
-              img: 'https://images.unsplash.com/photo-1698332137428-3c4296198e8f?w=1600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8YmFuZ2Fsb3JlfGVufDB8fDB8fHww'
-            },
-            {
-              code: 'CCU', name: 'Kolkata', tagline: 'City of Joy',
-              img: 'https://plus.unsplash.com/premium_photo-1697730414399-3d4d9ada98bd?q=80&w=1470&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
-            },
-            {
-              code: 'MAA', name: 'Chennai', tagline: 'Gateway to the South',
-              img: 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=1600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8Y2hlbm5haXxlbnwwfHwwfHx8MA%3D%3D'
-            },
-          ]
+  const promo = PROMOS[promoIdx];
 
   return (
-    <div>
-      <div style={{
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #0ea5e9 100%)',
-        padding: '70px 24px 120px',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        <div style={{ position: 'absolute', top: -60, right: -60, width: 300, height: 300, borderRadius: '50%', background: 'rgba(14,165,233,0.1)', pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', bottom: -80, left: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(14,165,233,0.08)', pointerEvents: 'none' }} />
+    <div className="sky-page home-page">
+      <div className="clouds-wrap">
+        <div className="cloud c1" style={{ left: '3%' }} />
+        <div className="cloud c2" style={{ left: '55%' }} />
+        <div className="cloud c3" style={{ left: '25%' }} />
+        <div className="cloud c4" style={{ left: '75%' }} />
+        <div className="cloud c5" style={{ left: '10%' }} />
+        <div className="cloud c6" style={{ left: '40%' }} />
+      </div>
 
-        <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', marginBottom: 10 }}>
-              <span style={{ fontSize: 25, color: '#7dd3fc', fontWeight: 500 }}>Welcome to SkyVoyage</span>
-            </div>
-            <h1 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 'clamp(36px, 5vw, 60px)', color: 'white', lineHeight: 1.1, marginBottom: 16 }}>
-              Book Smarter.<br />
-              <span style={{ color: '#38bdf8' }}>Fly Better.</span>
-            </h1>
-            <p style={{ color: '#94a3b8', fontSize: 16, maxWidth: 440, margin: '0 auto' }}>
-              Real-time seat selection, dynamic pricing, and instant confirmations.
-            </p>
+      {/* Hero */}
+      <div className="home-hero">
+        <div className="hero-badge-pill">✈ Smart Flight Booking</div>
+        <h1 className="hero-heading">Book <span>Smarter</span>,<br />Fly Better</h1>
+        <p className="hero-sub">Real-time seat selection · Dynamic pricing · Instant confirmation</p>
+      </div>
+
+      {/* Search Card */}
+      <div className="search-card-wrap">
+        <div className="card-glass search-card">
+          <div className="trip-tabs">
+            {['oneway', 'roundtrip'].map(t => (
+              <button key={t} className={`trip-tab${tripType === t ? ' active' : ''}`} onClick={() => setTripType(t)}>
+                {t === 'oneway' ? 'One Way' : 'Round Trip'}
+              </button>
+            ))}
           </div>
 
-          {/* Search Form */}
-          <div style={{ maxWidth: 800, margin: '0 auto' }}>
-            <div className="card" style={{ padding: 28, borderRadius: 20 }}>
-              {/* Trip type toggle */}
-              <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', borderRadius: 10, padding: 4, marginBottom: 20, width: 'fit-content' }}>
-                {[['oneway', 'One Way'], ['roundtrip', 'Round Trip']].map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setTripType(key)}
-                    style={{
-                      padding: '8px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700,
-                      fontFamily: 'inherit', cursor: 'pointer',
-                      background: tripType === key ? 'white' : 'transparent',
-                      color: tripType === key ? '#0ea5e9' : '#64748b',
-                      boxShadow: tripType === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none'
-                    }}
-                  >
-                    {label}
-                  </button>
+          {error && (
+            <div style={{ background: 'var(--red-50)', border: '1px solid var(--red-400)', borderRadius: 'var(--radius-sm)', padding: '10px 16px', marginBottom: 16, color: 'var(--red-600)', fontSize: 14 }}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSearch} className="search-form">
+            <div className="form-group">
+              <label className="form-label">From</label>
+              <select className="form-input" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
+                {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+              </select>
+            </div>
+            <button type="button" className="swap-btn" onClick={swap} title="Swap">⇄</button>
+            <div className="form-group">
+              <label className="form-label">To</label>
+              <select className="form-input" value={form.destination} onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}>
+                {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Departure</label>
+              <input className="form-input" type="date" min={today} value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+            </div>
+            {tripType === 'roundtrip' && (
+              <div className="form-group">
+                <label className="form-label">Return</label>
+                <input className="form-input" type="date" min={form.date || today} value={form.returnDate} onChange={e => setForm(f => ({ ...f, returnDate: e.target.value }))} />
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Passengers</label>
+              <select className="form-input" value={form.passengers} onChange={e => setForm(f => ({ ...f, passengers: parseInt(e.target.value) }))}>
+                {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Adult' : 'Adults'}</option>)}
+              </select>
+            </div>
+            <button type="submit" className="btn btn-primary btn-lg search-submit">Search Flights</button>
+          </form>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="stats-bar">
+        {[['16+', 'Routes'], ['7', 'Cities'], ['0%', 'Booking Fees'], ['10 min', 'Seat Lock']].map(([n, l]) => (
+          <div key={l} className="stat-item">
+            <div className="stat-num">{n}</div>
+            <div className="stat-label">{l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="home-sections">
+        {/* Hot Deals */}
+        <div className="section" id="deals">
+          <div className="section-header">
+            <div className="section-title">Hot Deals</div>
+          </div>
+          <div className="deals-scroll">
+            {DEALS.map((deal, i) => (
+              <div key={i} className="deal-card" style={{ background: deal.color }}>
+                <span className="deal-tag">{deal.tag}</span>
+                <div className="deal-route">{cityName(deal.from)} → {cityName(deal.to)}</div>
+                <div className="deal-bottom">
+                  <div>
+                    <div className="deal-from">from</div>
+                    <div className="deal-price">{deal.price}</div>
+                  </div>
+                  <button className="deal-btn" onClick={() => quickSearch(deal.from, deal.to)}>Book Now</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Destinations */}
+        <div className="section">
+          <div className="section-header">
+            <div className="section-title">Popular Destinations</div>
+          </div>
+          <div className="dest-row">
+            {DESTINATIONS.map(d => (
+              <div key={d.code} className="dest-card" onClick={() => setForm(f => ({ ...f, destination: d.code }))}>
+                <div className="dest-circle">
+                  <img src={d.image} alt={d.name} />
+                  {d.isNew && <span className="dest-new">New</span>}
+                </div>
+                <div className="dest-name">{d.name}</div>
+                <div className="dest-price">{d.price}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Promo Banner */}
+        <div className="section">
+          <div className="promo-banner" style={{ background: promo.color }}>
+            <div className="promo-left">
+              <div className="promo-kicker">✦ Limited Time Offer</div>
+              <div className="promo-title">{promo.title}</div>
+              <div className="promo-sub">{promo.sub}</div>
+              <div className="promo-perks">
+                {promo.perks.map(([val, label]) => (
+                  <div key={label} className="promo-perk">
+                    <span className="perk-val">{val}</span>
+                    <span className="perk-label">{label}</span>
+                  </div>
                 ))}
               </div>
-
-              {error && (
-                <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '10px 16px', marginBottom: 16, color: '#991b1b', fontSize: 14 }}>
-                  {error}
-                </div>
-              )}
-              <form onSubmit={handleSearch}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>From</label>
-                    <select name="source" value={form.source} onChange={handleChange} style={selectStyle}>
-                      {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>To</label>
-                    <select name="destination" value={form.destination} onChange={handleChange} style={selectStyle}>
-                      {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Departure</label>
-                    <input type="date" name="date" value={form.date} min={today} onChange={handleChange} style={selectStyle} />
-                  </div>
-                  {tripType === 'roundtrip' && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Return</label>
-                      <input type="date" name="returnDate" value={form.returnDate} min={form.date || today} onChange={handleChange} style={selectStyle} />
-                    </div>
-                  )}
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Passengers</label>
-                    <select name="passengers" value={form.passengers} onChange={handleChange} style={selectStyle}>
-                      {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} Passenger{n > 1 ? 's' : ''}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: 16, borderRadius: 12, justifyContent: 'center' }}>
-                   Search Flights
-                </button>
-              </form>
+              <button className="btn promo-btn" onClick={() => navigate('/payment')}>Claim Offer</button>
             </div>
+            <div className="promo-dots">
+              {PROMOS.map((_, i) => (
+                <div key={i} className={`pdot${promoIdx === i ? ' active' : ''}`} onClick={() => setPromoIdx(i)} />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Why SkyVoyage */}
+        <div className="section why-section">
+          <div className="section-header">
+            <div className="section-title">Why SkyVoyage?</div>
+          </div>
+          <div className="features-grid">
+            {[
+              ['/passenger.png', 'Smart Seat Selection', 'Choose window, aisle, or extra legroom with live availability', '#E6F1FB'],
+              ['/flying-money.png', 'Best Price Guarantee', 'Dynamic pricing engine finds the sharpest fares on every route', '#E1F5EE'],
+              ['/padlock.png', 'Instant Seat Lock', 'Seats lock the moment you select — no race conditions, ever', '#FAEEDA'],
+              ['/cancel.png', 'Easy Cancellations', 'Cancel or modify bookings anytime with zero hassle', '#FAECE7'],
+            ].map(([icon, title, desc, bg]) => (
+              <div key={title} className="feature-card">
+                <div className="feature-icon" style={{ background: bg }}><img src={icon} alt={title} className="feature-img" /></div>
+                <div className="feature-title">{title}</div>
+                <div className="feature-desc">{desc}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Popular Destinations */}
-      <div className="container" style={{ padding: '60px 24px' }}>
-        <h2 style={{ fontSize: 28, marginBottom: 8 }}>Popular Destinations</h2>
-        <p style={{ color: '#64748b', marginBottom: 32 }}>Explore India's most loved cities</p>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-          {popularDestinations.map((city) => (
-            <button
-              key={city.code}
-              onClick={() => navigate(`/flights?destination=${city.code}&date=${tomorrow}&passengers=1`)}
-              style={{
-                position: 'relative', height: 200, borderRadius: 16,
-                overflow: 'hidden', border: 'none', cursor: 'pointer',
-                padding: 0, fontFamily: 'inherit',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 16px 40px rgba(0,0,0,0.2)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
-            >
-              <img
-                src={city.img}
-                alt={city.name}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                onError={e => { e.target.style.display = 'none'; e.target.parentElement.style.background = '#1e3a5f'; }}
-              />
-              <div style={{
-                position: 'absolute', inset: 0,
-                background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.1) 60%, transparent 100%)',
-              }} />
-
-              <div style={{
-                position: 'absolute', bottom: 0, left: 0, right: 0,
-                padding: '16px',
-                textAlign: 'left',
-              }}>
-                <div style={{ color: 'white', fontWeight: 800, fontSize: 18, fontFamily: 'Syne, sans-serif', lineHeight: 1.2 }}>
-                  {city.name}
-                </div>
-                <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>
-                  {city.tagline}
-                </div>
-              </div>
-
-              <div style={{
-                position: 'absolute', top: 12, right: 12,
-                background: 'rgba(255,255,255,0.15)',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid rgba(255,255,255,0.3)',
-                borderRadius: 8, padding: '3px 8px',
-                color: 'white', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em'
-              }}>
-                {city.code}
-              </div>
-            </button>
-          ))}
+      <footer className="home-footer">
+        <div className="footer-logo">
+          <span className="footer-logo-icon">✈</span> SkyVoyage
         </div>
-      </div>
-      
+        <div className="footer-links">
+          <a href="#deals">Deals</a>
+          <a href="#!">Privacy</a>
+          <a href="#!">Terms</a>
+          <a href="#!">Contact</a>
+        </div>
+        <p className="footer-copy">© 2026 SkyVoyage · Smart Flight Booking</p>
+      </footer>
     </div>
   );
-};
-
-const selectStyle = {
-  width: '100%', padding: '10px 12px', borderRadius: 10,
-  border: '1.5px solid #e2e8f0', background: '#f8fafc',
-  fontSize: 14, color: '#0f172a', outline: 'none',
-  transition: 'border-color 0.2s'
 };
 
 export default Home;

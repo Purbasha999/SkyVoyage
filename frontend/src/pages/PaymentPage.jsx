@@ -1,30 +1,29 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { confirmBooking, applyPromoCode } from '../services/api';
+import './PaymentPage.css';
 
-// Simulated payment methods — no real gateway is wired up; this mirrors a
-// checkout flow so the booking confirms only once the user "pays".
 const PaymentPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const bookingData = location.state?.bookingData;
 
-  const [method, setMethod] = useState('UPI');
   const [upiId, setUpiId] = useState('');
   const [upiVerified, setUpiVerified] = useState(false);
+  const [showUpiPin, setShowUpiPin] = useState(false);
+  const [upiPin, setUpiPin] = useState('');
   const [card, setCard] = useState({ number: '', expiry: '', cvv: '', name: '' });
   const [selectedBank, setSelectedBank] = useState('');
   const [bankLogin, setBankLogin] = useState({ userId: '', password: '' });
-
   const [promo, setPromo] = useState('');
-  const [promoStatus, setPromoStatus] = useState(null); // { message, isError }
   const [discount, setDiscount] = useState(0);
-  const [paying, setPaying] = useState(false);
+  const [method, setMethod] = useState('UPI');
   const [error, setError] = useState('');
+  const [paying, setPaying] = useState(false);
 
   if (!bookingData) {
     return (
-      <div className="container" style={{ padding: 60, textAlign: 'center' }}>
+      <div style={{ padding: 60, textAlign: 'center' }}>
         <h2>Session expired</h2>
         <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/')}>Go Home</button>
       </div>
@@ -33,42 +32,45 @@ const PaymentPage = () => {
 
   const finalPrice = Math.max(0, bookingData.totalPrice - discount);
 
-  const handleApplyPromo = async () => {
+  const applyPromo = async () => {
     if (!promo.trim()) return;
     try {
       const res = await applyPromoCode({ code: promo.trim(), totalPrice: bookingData.totalPrice, isStudent: false });
       setDiscount(res.data.discount);
-      setPromoStatus({ message: `Promo applied! You saved ₹${res.data.discount.toLocaleString('en-IN')}.`, isError: false });
+      setError('');
     } catch (err) {
       setDiscount(0);
-      setPromoStatus({ message: err.response?.data?.message || 'Invalid promo code', isError: true });
+      setError(err.response?.data?.message || 'Invalid promo code');
     }
   };
 
-  const validateMethod = () => {
+  const handleUpiVerify = () => {
+    if (!upiId.includes('@')) { setError('Invalid UPI ID'); return; }
+    setError('');
+    setUpiVerified(true);
+  };
+
+  const handlePayment = async () => {
     if (method === 'UPI') {
-      if (!upiVerified) return 'Please verify your UPI ID first.';
+      if (!upiVerified) return setError('Verify UPI first');
+      if (!showUpiPin) return setShowUpiPin(true);
+      if (upiPin.length !== 4) return setError('Enter a valid 4-digit PIN');
     }
     if (method === 'Card') {
-      if (!card.number || !card.cvv || !card.expiry || !card.name) return 'Please fill in all card details.';
+      if (!card.number || !card.cvv || !card.expiry) return setError('Fill in card details');
     }
     if (method === 'NetBanking') {
-      if (!selectedBank || !bankLogin.userId || !bankLogin.password) return 'Please complete your bank login.';
+      if (!selectedBank || !bankLogin.userId || !bankLogin.password) return setError('Complete bank login');
     }
-    return null;
-  };
 
-  const handlePay = async () => {
-    const validationError = validateMethod();
-    if (validationError) { setError(validationError); return; }
     setError('');
     setPaying(true);
 
     try {
       if (bookingData.type === 'roundtrip') {
         const groupId = `GRP-${Date.now().toString(36).toUpperCase()}`;
-        const seatBookings = (seats) => seats.map((seat, i) => ({
-          seatNumber: seat.seatNumber,
+        const seatBookings = (nums) => nums.map((seatNumber, i) => ({
+          seatNumber,
           passengerName: bookingData.passengers[i].passengerName.trim(),
           passengerAge: bookingData.passengers[i].passengerAge,
           passengerGender: bookingData.passengers[i].passengerGender,
@@ -78,25 +80,24 @@ const PaymentPage = () => {
         const res = await Promise.all([
           confirmBooking({
             flightId: bookingData.outbound._id,
-            seats: seatBookings(bookingData.outboundSeats),
+            seats: seatBookings(bookingData.outboundSeatNumbers),
             addOns: bookingData.addOns.outbound || [],
             discount,
             groupId
           }),
           confirmBooking({
             flightId: bookingData.returnFlight._id,
-            seats: seatBookings(bookingData.returnSeats),
+            seats: seatBookings(bookingData.returnSeatNumbers),
             addOns: bookingData.addOns.return || [],
             discount: 0,
             groupId
           })
         ]);
 
-        const allBookings = [...res[0].data.bookings, ...res[1].data.bookings];
-        navigate('/bookings', { state: { newBookings: allBookings } });
+        navigate('/bookings', { state: { newBookings: [...res[0].data.bookings, ...res[1].data.bookings] } });
       } else {
-        const seatBookings = bookingData.seats.map((seat, i) => ({
-          seatNumber: seat.seatNumber,
+        const seatBookings = bookingData.seatNumbers.map((seatNumber, i) => ({
+          seatNumber,
           passengerName: bookingData.passengers[i].passengerName.trim(),
           passengerAge: bookingData.passengers[i].passengerAge,
           passengerGender: bookingData.passengers[i].passengerGender,
@@ -120,79 +121,52 @@ const PaymentPage = () => {
   };
 
   return (
-    <div className="container" style={{ padding: '32px 24px', maxWidth: 900, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 24 }}>Payment</h1>
+    <div className="payment-container">
+      <div className="payment-left">
+        <div className="card">
+          <h3>Apply Promo Code</h3>
+          <div className="promo-box">
+            <input value={promo} onChange={e => setPromo(e.target.value.toUpperCase())} placeholder="e.g. FLY500" />
+            <button onClick={applyPromo}>Apply</button>
+          </div>
+          {discount > 0 && <p style={{ color: 'var(--teal-600)', fontSize: 12, marginTop: 8, fontWeight: 600 }}>Promo applied! You saved ₹{discount.toLocaleString('en-IN')}.</p>}
+        </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 20, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Promo */}
-          <div className="card" style={{ padding: 20 }}>
-            <h3 style={{ fontSize: 15, marginBottom: 12 }}>Apply Promo Code</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={promo}
-                onChange={e => setPromo(e.target.value.toUpperCase())}
-                placeholder="e.g. FLY500"
-                style={{ ...inputStyle, flex: 1 }}
-              />
-              <button onClick={handleApplyPromo} className="btn btn-outline" style={{ fontSize: 13, padding: '9px 18px' }}>Apply</button>
-            </div>
-            {promoStatus && (
-              <p style={{ fontSize: 12, marginTop: 8, color: promoStatus.isError ? '#ef4444' : '#10b981', fontWeight: 600 }}>
-                {promoStatus.message}
-              </p>
-            )}
+        <div className="card">
+          <h3>Payment Method</h3>
+          <div className="payment-options">
+            {['UPI', 'Card', 'NetBanking'].map(m => (
+              <div key={m} className={`method-tile ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</div>
+            ))}
           </div>
 
-          {/* Payment method */}
-          <div className="card" style={{ padding: 20 }}>
-            <h3 style={{ fontSize: 15, marginBottom: 14 }}>Payment Method</h3>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-              {['UPI', 'Card', 'NetBanking'].map(m => (
-                <button
-                  key={m}
-                  onClick={() => setMethod(m)}
-                  style={{
-                    flex: 1, padding: '10px 0', borderRadius: 8, border: `1.5px solid ${method === m ? '#0ea5e9' : '#e2e8f0'}`,
-                    background: method === m ? '#f0f9ff' : 'white', color: method === m ? '#0ea5e9' : '#64748b',
-                    fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit'
-                  }}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-
+          <div className="payment-form">
             {method === 'UPI' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={upiId} onChange={e => { setUpiId(e.target.value); setUpiVerified(false); }} placeholder="yourname@upi" style={{ ...inputStyle, flex: 1 }} />
-                  <button
-                    onClick={() => setUpiVerified(upiId.includes('@'))}
-                    className="btn btn-outline"
-                    style={{ fontSize: 12, padding: '9px 16px' }}
-                  >
-                    {upiVerified ? 'Verified ✓' : 'Verify'}
-                  </button>
+              <div className="upi-form">
+                <div>
+                  <input value={upiId} onChange={e => { setUpiId(e.target.value); setUpiVerified(false); }} placeholder="Enter UPI ID" />
+                  <button type="button" onClick={handleUpiVerify} className="verify-btn">{upiVerified ? 'Verified ✓' : 'Verify'}</button>
                 </div>
-                {upiId && !upiId.includes('@') && <p style={{ fontSize: 12, color: '#ef4444' }}>Enter a valid UPI ID (e.g. name@bank).</p>}
+                {showUpiPin && (
+                  <input type="password" maxLength={4} placeholder="Enter UPI PIN" value={upiPin} onChange={e => setUpiPin(e.target.value)} />
+                )}
               </div>
             )}
 
             {method === 'Card' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <input placeholder="Card Number" value={card.number} onChange={e => setCard({ ...card, number: e.target.value })} style={inputStyle} />
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <input placeholder="MM/YY" value={card.expiry} onChange={e => setCard({ ...card, expiry: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
-                  <input placeholder="CVV" value={card.cvv} onChange={e => setCard({ ...card, cvv: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+              <div className="card-form">
+                <input placeholder="Card Number" value={card.number} onChange={e => setCard({ ...card, number: e.target.value })} />
+                <div className="card-row">
+                  <input placeholder="MM/YY" value={card.expiry} onChange={e => setCard({ ...card, expiry: e.target.value })} />
+                  <input placeholder="CVV" value={card.cvv} onChange={e => setCard({ ...card, cvv: e.target.value })} />
                 </div>
-                <input placeholder="Card Holder Name" value={card.name} onChange={e => setCard({ ...card, name: e.target.value })} style={inputStyle} />
+                <input placeholder="Card Holder Name" value={card.name} onChange={e => setCard({ ...card, name: e.target.value })} />
               </div>
             )}
 
             {method === 'NetBanking' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <select value={selectedBank} onChange={e => setSelectedBank(e.target.value)} style={inputStyle}>
+              <div className="netbanking-form">
+                <select value={selectedBank} onChange={e => setSelectedBank(e.target.value)}>
                   <option value="">Select Bank</option>
                   <option value="SBI">SBI</option>
                   <option value="HDFC">HDFC</option>
@@ -200,37 +174,26 @@ const PaymentPage = () => {
                 </select>
                 {selectedBank && (
                   <>
-                    <input placeholder="User ID" value={bankLogin.userId} onChange={e => setBankLogin({ ...bankLogin, userId: e.target.value })} style={inputStyle} />
-                    <input type="password" placeholder="Password" value={bankLogin.password} onChange={e => setBankLogin({ ...bankLogin, password: e.target.value })} style={inputStyle} />
+                    <input placeholder="User ID" value={bankLogin.userId} onChange={e => setBankLogin({ ...bankLogin, userId: e.target.value })} />
+                    <input type="password" placeholder="Password" value={bankLogin.password} onChange={e => setBankLogin({ ...bankLogin, password: e.target.value })} />
                   </>
                 )}
               </div>
             )}
           </div>
-
-          {error && (
-            <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '10px 16px', color: '#991b1b', fontSize: 13 }}>{error}</div>
-          )}
         </div>
 
-        {/* Summary */}
-        <div className="card" style={{ padding: 20, position: 'sticky', top: 90 }}>
-          <h3 style={{ fontSize: 15, marginBottom: 14 }}>Payment Summary</h3>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 8 }}>
-            <span>Subtotal</span>
-            <span>₹{bookingData.totalPrice.toLocaleString('en-IN')}</span>
-          </div>
-          {discount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 8, color: '#10b981' }}>
-              <span>Discount</span>
-              <span>-₹{discount.toLocaleString('en-IN')}</span>
-            </div>
-          )}
-          <div style={{ borderTop: '2px solid #0f172a', marginTop: 8, paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 22, fontFamily: 'Syne, sans-serif', marginBottom: 16 }}>
-            <span>Total</span>
-            <span style={{ color: '#0ea5e9' }}>₹{finalPrice.toLocaleString('en-IN')}</span>
-          </div>
-          <button onClick={handlePay} disabled={paying} className="btn btn-primary" style={{ width: '100%', padding: 14, fontSize: 16, borderRadius: 12, justifyContent: 'center' }}>
+        {error && <div style={{ background: 'var(--red-50)', color: 'var(--red-600)', borderRadius: 'var(--radius-sm)', padding: '10px 16px', fontSize: 13 }}>{error}</div>}
+      </div>
+
+      <div className="payment-right">
+        <div className="card summary-card">
+          <h3>Payment Summary</h3>
+          <div className="price-row"><span>Total</span><span>₹{bookingData.totalPrice.toLocaleString('en-IN')}</span></div>
+          {discount > 0 && <div className="price-row discount"><span>Discount</span><span>-₹{discount.toLocaleString('en-IN')}</span></div>}
+          <hr className="divider" />
+          <div className="price-total">₹{finalPrice.toLocaleString('en-IN')}</div>
+          <button className="pay-btn" onClick={handlePayment} disabled={paying}>
             {paying ? 'Processing...' : `Pay ₹${finalPrice.toLocaleString('en-IN')}`}
           </button>
         </div>
@@ -238,7 +201,5 @@ const PaymentPage = () => {
     </div>
   );
 };
-
-const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' };
 
 export default PaymentPage;

@@ -2,50 +2,21 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AddOnsSection from '../components/AddOnsSection';
+import './BookingSummaryRound.css';
 
-const fmt = (date) => new Date(date).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
-
-const LegSummary = ({ label, flight, seats, pricing }) => (
-  <div className="card" style={{ padding: 20 }}>
-    <div style={{ fontSize: 12, color: '#0ea5e9', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
-    <div style={{ fontWeight: 700, fontSize: 15 }}>{flight.airline} · {flight.flightNumber}</div>
-    <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>{flight.source} → {flight.destination} · {fmt(flight.departureTime)}</div>
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-      {seats.map(s => <span key={s.seatNumber} className="badge badge-info">{s.seatNumber}</span>)}
-    </div>
-    {pricing && (
-      <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 8, fontSize: 13, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Row label="Base fare" value={pricing.basePrice} />
-        {pricing.demandCharge > 0 && <Row label="High demand" value={pricing.demandCharge} accent="#f59e0b" />}
-        {pricing.lateBookingCharge > 0 && <Row label="Last-minute" value={pricing.lateBookingCharge} accent="#ef4444" />}
-        {pricing.seatTypeCharge > 0 && <Row label="Seat charges" value={pricing.seatTypeCharge} accent="#8b5cf6" />}
-        {pricing.seatClassCharge > 0 && <Row label="Business class" value={pricing.seatClassCharge} accent="#f59e0b" />}
-        <Row label="Taxes & GST" value={pricing.taxes} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, paddingTop: 4, borderTop: '1px dashed #e2e8f0' }}>
-          <span>Leg total</span><span>₹{pricing.finalPrice.toLocaleString('en-IN')}</span>
-        </div>
-      </div>
-    )}
-  </div>
-);
-
-const Row = ({ label, value, accent }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', color: accent || '#374151' }}>
-    <span>{label}</span><span>₹{value.toLocaleString('en-IN')}</span>
-  </div>
-);
+const fmt = (d) => new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
 
 const RoundTripBookingSummary = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
   const {
-    outbound, returnFlight, outboundSeats, returnSeats,
+    outbound, returnFlight, outboundSeatNumbers, returnSeatNumbers,
     outboundPricing, returnPricing, outboundLockExpiry, returnLockExpiry
   } = location.state || {};
 
-  const maxPax = Math.max(outboundSeats?.length || 0, returnSeats?.length || 0);
-  const [passengers, setPassengers] = useState(
+  const maxPax = Math.max(outboundSeatNumbers?.length || 0, returnSeatNumbers?.length || 0);
+  const [forms, setForms] = useState(
     Array.from({ length: maxPax }, (_, i) => ({
       passengerName: i === 0 ? (user?.name || '') : '',
       passengerAge: '',
@@ -56,28 +27,21 @@ const RoundTripBookingSummary = () => {
   const [addOns, setAddOns] = useState({ outbound: [], return: [] });
   const [error, setError] = useState('');
 
-  if (!outbound || !returnFlight || !outboundSeats?.length || !returnSeats?.length) {
+  if (!outbound || !returnFlight) {
     return (
-      <div className="container" style={{ padding: 60, textAlign: 'center' }}>
-        <h2>Session Expired</h2>
-        <p style={{ color: '#64748b', marginBottom: 24 }}>Please start your round-trip search again.</p>
-        <button onClick={() => navigate('/')} className="btn btn-primary">Search Flights</button>
+      <div className="page-content" style={{ textAlign: 'center', padding: 60 }}>
+        <h2>Please select both flights first</h2>
+        <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/')}>Search Flights</button>
       </div>
     );
   }
 
-  const outAddOnTotal = addOns.outbound.reduce((s, a) => s + a.price, 0);
-  const retAddOnTotal = addOns.return.reduce((s, a) => s + a.price, 0);
-  const grandTotal = (outboundPricing?.finalPrice || 0) + (returnPricing?.finalPrice || 0) + outAddOnTotal + retAddOnTotal;
-
-  const updatePassenger = (idx, field, value) => {
-    setPassengers(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p));
-  };
+  const outboundAddOnTotal = addOns.outbound.reduce((s, i) => s + i.price, 0);
+  const returnAddOnTotal = addOns.return.reduce((s, i) => s + i.price, 0);
 
   const handleConfirm = () => {
-    const missing = passengers.findIndex(p => !p.passengerName.trim() || !p.passengerAge);
-    if (missing !== -1) {
-      setError('Full name and age are required for every passenger.');
+    if (forms.some(p => !p.passengerName || !p.passengerAge)) {
+      setError('Fill in name and age for every passenger');
       return;
     }
     setError('');
@@ -85,91 +49,120 @@ const RoundTripBookingSummary = () => {
       state: {
         bookingData: {
           type: 'roundtrip',
-          outbound, returnFlight, outboundSeats, returnSeats,
+          outbound, returnFlight,
+          outboundSeatNumbers, returnSeatNumbers,
           outboundPricing, returnPricing,
           outboundLockExpiry, returnLockExpiry,
-          passengers, addOns,
-          totalPrice: grandTotal
+          passengers: forms, addOns,
+          totalPrice: (outboundPricing?.finalPrice || 0) + (returnPricing?.finalPrice || 0) + outboundAddOnTotal + returnAddOnTotal
         }
       }
     });
   };
 
-  return (
-    <div className="container" style={{ padding: '32px 24px', maxWidth: 950, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 4 }}>Booking Summary — Round Trip</h1>
-      <p style={{ color: '#64748b', marginBottom: 24 }}>Review both legs of your journey and add extras.</p>
+  const updatePassenger = (i, field, value) => setForms(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="card" style={{ padding: 24 }}>
-            <h3 style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', marginBottom: 14 }}>Passenger Details</h3>
-            {passengers.map((p, idx) => (
-              <div key={idx} style={{ marginBottom: idx < passengers.length - 1 ? 20 : 0, paddingBottom: idx < passengers.length - 1 ? 20 : 0, borderBottom: idx < passengers.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>
-                  Passenger {idx + 1} · Outbound {outboundSeats[idx]?.seatNumber} · Return {returnSeats[idx]?.seatNumber}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px', gap: 10, marginBottom: 10 }}>
-                  <div>
-                    <label style={labelStyle}>Full Name *</label>
-                    <input style={inputStyle} value={p.passengerName} onChange={e => updatePassenger(idx, 'passengerName', e.target.value)} />
+  return (
+    <div className="page-content summary-page">
+      <div className="summary-header">
+        <div className="section">
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Back</button>
+          <h1 className="summary-title">Booking Summary — Round Trip</h1>
+        </div>
+      </div>
+
+      <div className="section summary-layout">
+        <div className="summary-left">
+          <div className="card summary-card">
+            <h3 className="sc-title">Passenger Details</h3>
+            {forms.map((p, i) => (
+              <div key={i} className="passenger-form">
+                <div className="pf-label">Passenger {i + 1} · Outbound {outboundSeatNumbers[i]} · Return {returnSeatNumbers[i]}</div>
+                <div className="pf-fields">
+                  <div className="form-group">
+                    <label className="form-label">Full Name</label>
+                    <input className="form-input" value={p.passengerName} onChange={e => updatePassenger(i, 'passengerName', e.target.value)} />
                   </div>
-                  <div>
-                    <label style={labelStyle}>Age *</label>
-                    <input style={inputStyle} type="number" min="1" max="120" value={p.passengerAge} onChange={e => updatePassenger(idx, 'passengerAge', e.target.value)} />
+                  <div className="form-group">
+                    <label className="form-label">Age</label>
+                    <input className="form-input" type="number" value={p.passengerAge} onChange={e => updatePassenger(i, 'passengerAge', e.target.value)} />
                   </div>
-                  <div>
-                    <label style={labelStyle}>Gender</label>
-                    <select style={inputStyle} value={p.passengerGender} onChange={e => updatePassenger(idx, 'passengerGender', e.target.value)}>
+                  <div className="form-group">
+                    <label className="form-label">Gender</label>
+                    <select className="form-input" value={p.passengerGender} onChange={e => updatePassenger(i, 'passengerGender', e.target.value)}>
                       <option value="MALE">Male</option>
                       <option value="FEMALE">Female</option>
                       <option value="OTHER">Other</option>
                     </select>
                   </div>
                 </div>
-                <label style={labelStyle}>Phone (optional)</label>
-                <input style={inputStyle} value={p.passengerPhone} onChange={e => updatePassenger(idx, 'passengerPhone', e.target.value)} />
               </div>
             ))}
           </div>
 
-          <div>
-            <h3 style={{ fontSize: 14, marginBottom: 10 }}>Add-ons — Outbound</h3>
+          <div style={{ marginBottom: 16 }}>
+            <h3 className="sc-title" style={{ margin: '0 0 10px' }}>Add-ons — Outbound</h3>
             <AddOnsSection selected={addOns.outbound} setSelected={(val) => setAddOns(prev => ({ ...prev, outbound: val }))} />
           </div>
           <div>
-            <h3 style={{ fontSize: 14, marginBottom: 10 }}>Add-ons — Return</h3>
+            <h3 className="sc-title" style={{ margin: '0 0 10px' }}>Add-ons — Return</h3>
             <AddOnsSection selected={addOns.return} setSelected={(val) => setAddOns(prev => ({ ...prev, return: val }))} />
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <LegSummary label="Outbound" flight={outbound} seats={outboundSeats} pricing={outboundPricing} />
-          <LegSummary label="Return" flight={returnFlight} seats={returnSeats} pricing={returnPricing} />
+        <div className="summary-right">
+          <div className="card summary-card">
+            <h3 className="sc-title">Outbound Flight</h3>
+            <div className="sf-airline-row">
+              <div className="sf-badge">{outbound.flightNumber}</div>
+              <div><div className="sf-airline">{outbound.airline}</div></div>
+            </div>
+            <div className="sf-route">
+              <div className="sf-city"><div className="sf-time">{fmt(outbound.departureTime)}</div><div className="sf-code">{outbound.source}</div></div>
+              <div className="sf-arrow-wrap">✈</div>
+              <div className="sf-city right"><div className="sf-time">{fmt(outbound.arrivalTime)}</div><div className="sf-code">{outbound.destination}</div></div>
+            </div>
+            <div className="sf-seats-row">{outboundSeatNumbers.map(s => <span key={s} className="badge badge-blue">{s}</span>)}</div>
+          </div>
 
-          <div className="card" style={{ padding: 20 }}>
-            {outAddOnTotal > 0 && <Row label="Outbound add-ons" value={outAddOnTotal} />}
-            {retAddOnTotal > 0 && <Row label="Return add-ons" value={retAddOnTotal} />}
-            <div style={{ borderTop: '2px solid #0f172a', marginTop: 8, paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 18, fontFamily: 'Syne, sans-serif' }}>
-              <span>Grand Total</span>
-              <span>₹{grandTotal.toLocaleString('en-IN')}</span>
+          <div className="card summary-card">
+            <h3 className="sc-title">Return Flight</h3>
+            <div className="sf-airline-row">
+              <div className="sf-badge">{returnFlight.flightNumber}</div>
+              <div><div className="sf-airline">{returnFlight.airline}</div></div>
+            </div>
+            <div className="sf-route">
+              <div className="sf-city"><div className="sf-time">{fmt(returnFlight.departureTime)}</div><div className="sf-code">{returnFlight.source}</div></div>
+              <div className="sf-arrow-wrap">✈</div>
+              <div className="sf-city right"><div className="sf-time">{fmt(returnFlight.arrivalTime)}</div><div className="sf-code">{returnFlight.destination}</div></div>
+            </div>
+            <div className="sf-seats-row">{returnSeatNumbers.map(s => <span key={s} className="badge badge-blue">{s}</span>)}</div>
+          </div>
+
+          <div className="card summary-card">
+            <h3 className="sc-title">Price Breakdown</h3>
+            <div className="price-rows">
+              <div className="price-row"><span>Outbound Base</span><span>₹{(outboundPricing?.basePrice || 0).toLocaleString('en-IN')}</span></div>
+              {outboundPricing?.seatTypeCharge > 0 && <div className="price-row"><span>Outbound Seat Charges</span><span>+₹{outboundPricing.seatTypeCharge.toLocaleString('en-IN')}</span></div>}
+              <div className="price-row"><span>Outbound Taxes</span><span>₹{(outboundPricing?.taxes || 0).toLocaleString('en-IN')}</span></div>
+              {outboundAddOnTotal > 0 && <div className="price-row"><span>Outbound Add-ons</span><span>+₹{outboundAddOnTotal.toLocaleString('en-IN')}</span></div>}
+              <hr className="divider" />
+              <div className="price-row"><span>Return Base</span><span>₹{(returnPricing?.basePrice || 0).toLocaleString('en-IN')}</span></div>
+              {returnPricing?.seatTypeCharge > 0 && <div className="price-row"><span>Return Seat Charges</span><span>+₹{returnPricing.seatTypeCharge.toLocaleString('en-IN')}</span></div>}
+              <div className="price-row"><span>Return Taxes</span><span>₹{(returnPricing?.taxes || 0).toLocaleString('en-IN')}</span></div>
+              {returnAddOnTotal > 0 && <div className="price-row"><span>Return Add-ons</span><span>+₹{returnAddOnTotal.toLocaleString('en-IN')}</span></div>}
+              <hr className="divider" />
+              <div className="price-row total"><span>Total</span><span>₹{((outboundPricing?.finalPrice || 0) + (returnPricing?.finalPrice || 0) + outboundAddOnTotal + returnAddOnTotal).toLocaleString('en-IN')}</span></div>
             </div>
           </div>
 
-          {error && (
-            <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '10px 16px', color: '#991b1b', fontSize: 13 }}>{error}</div>
-          )}
+          {error && <div style={{ background: 'var(--red-50)', color: 'var(--red-600)', borderRadius: 'var(--radius-sm)', padding: '10px 16px', fontSize: 13 }}>{error}</div>}
 
-          <button onClick={handleConfirm} className="btn btn-primary" style={{ width: '100%', padding: 14, fontSize: 16, borderRadius: 12, justifyContent: 'center' }}>
-            Continue to Payment →
-          </button>
+          <button className="btn btn-primary btn-lg btn-full" onClick={handleConfirm}>Continue to Payment →</button>
         </div>
       </div>
     </div>
   );
 };
-
-const labelStyle = { display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.03em' };
-const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', fontSize: 13, outline: 'none', color: '#0f172a', boxSizing: 'border-box' };
 
 export default RoundTripBookingSummary;

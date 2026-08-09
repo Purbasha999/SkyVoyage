@@ -1,411 +1,474 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  adminGetStats, adminGetAllBookings, getAllFlights,
-  adminCreateFlight, adminDeleteFlight, adminGetPricingRules,
-  adminCreatePricingRule, adminDeletePricingRule
+  getAllFlights, adminCreateFlight, adminUpdateFlight, adminDeleteFlight,
+  adminGetAllBookings, adminGetStats,
+  adminGetPricingRules, adminCreatePricingRule, adminUpdatePricingRule, adminDeletePricingRule
 } from '../services/api';
 import CITIES from '../constants/cities';
-import FlightIcon from '@mui/icons-material/Flight';
-import AirplaneTicketIcon from '@mui/icons-material/AirplaneTicket';
-import PersonIcon from '@mui/icons-material/Person';
-import CancelPresentationIcon from '@mui/icons-material/CancelPresentation';
-import CurrencyRupeeIcon from '@mui/icons-material/CurrencyRupee';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import DeleteIcon from '@mui/icons-material/Delete';
-import AddIcon from '@mui/icons-material/Add';
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import './AdminDashboard.css';
+
+const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+const RULE_TYPE_META = {
+  DEMAND: { label: 'High Demand', icon: '📈', badge: 'badge-amber' },
+  TIME: { label: 'Last Minute', icon: '⏰', badge: 'badge-red' },
+  SEAT_TYPE: { label: 'Seat Type', icon: '💺', badge: 'badge-blue' },
+  CLASS: { label: 'Cabin Class', icon: '🎫', badge: 'badge-blue' },
+};
+
+const conditionSummary = (rule) => {
+  switch (rule.type) {
+    case 'DEMAND': return `Occupancy ≥ ${rule.condition?.threshold}%`;
+    case 'TIME': return `Within ${rule.condition?.hoursBeforeDeparture}h of departure`;
+    case 'SEAT_TYPE': return rule.condition?.seatType ? `Seat type: ${rule.condition.seatType}` : `Cabin: ${rule.condition?.seatClass}`;
+    case 'CLASS': return `Cabin class: ${rule.condition?.class}`;
+    default: return '—';
+  }
+};
+
+const INITIAL_FLIGHT_FORM = { flightNumber: '', airline: '', source: '', destination: '', departureTime: '', arrivalTime: '', basePrice: '', rows: 10, columns: 6 };
+const INITIAL_RULE_FORM = { name: '', description: '', type: 'DEMAND', charge: '', isActive: true, threshold: '', hoursBeforeDeparture: '', seatType: 'WINDOW', class: 'ECONOMY' };
 
 const AdminDashboard = () => {
   const [tab, setTab] = useState('overview');
   const [stats, setStats] = useState(null);
-  const [bookings, setBookings] = useState([]);
   const [flights, setFlights] = useState([]);
-  const [rules, setRules] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
-  const [newFlight, setNewFlight] = useState({
-    flightNumber: '', airline: '', source: '', destination: '',
-    departureTime: '', arrivalTime: '', basePrice: '', rows: 30, columns: 6
-  });
+  const [showAddFlight, setShowAddFlight] = useState(false);
+  const [flightForm, setFlightForm] = useState(INITIAL_FLIGHT_FORM);
+  const [editId, setEditId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [newRule, setNewRule] = useState({
-    name: '', type: 'DEMAND', charge: '',
-    condition: { threshold: '', hoursBeforeDeparture: '', seatType: '', class: 'ECONOMY' }
-  });
+  const [rules, setRules] = useState([]);
+  const [showRuleForm, setShowRuleForm] = useState(false);
+  const [ruleForm, setRuleForm] = useState(INITIAL_RULE_FORM);
+  const [editRuleId, setEditRuleId] = useState(null);
 
   useEffect(() => {
-    Promise.all([
-      adminGetStats().then(r => setStats(r.data.stats)),
-      adminGetAllBookings().then(r => setBookings(r.data.bookings || [])),
-      getAllFlights().then(r => setFlights(r.data.flights || [])),
-      adminGetPricingRules().then(r => setRules(r.data.rules || []))
-    ]).finally(() => setLoading(false));
-  }, []);
+    loadStats();
+    if (tab === 'flights') loadFlights();
+    if (tab === 'bookings') loadBookings();
+    if (tab === 'pricing') loadRules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
-  const handleCreateFlight = async (e) => {
+  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(''), 3000); };
+
+  const loadStats = async () => {
+    try { const res = await adminGetStats(); setStats(res.data.stats); } catch { flash('Error: Failed to load stats'); }
+  };
+  const loadFlights = async () => {
+    try { setLoading(true); const res = await getAllFlights(); setFlights(res.data.flights); }
+    catch { flash('Error: Failed to load flights'); } finally { setLoading(false); }
+  };
+  const loadBookings = async () => {
+    try { setLoading(true); const res = await adminGetAllBookings(); setBookings(res.data.bookings); }
+    catch { flash('Error: Failed to load bookings'); } finally { setLoading(false); }
+  };
+  const loadRules = async () => {
+    try { setLoading(true); const res = await adminGetPricingRules(); setRules(res.data.rules); }
+    catch { flash('Error: Failed to load pricing rules'); } finally { setLoading(false); }
+  };
+
+  const ff = (field, val) => setFlightForm(f => ({ ...f, [field]: val }));
+
+  const handleAddFlight = async (e) => {
     e.preventDefault();
     try {
-      await adminCreateFlight(newFlight);
-      const r = await getAllFlights();
-      setFlights(r.data.flights);
-      setStats(prev => ({ ...prev, totalFlights: prev.totalFlights + 1 }));
-      setMsg('Flight created successfully!');
-      setNewFlight({ flightNumber: '', airline: '', source: '', destination: '', departureTime: '', arrivalTime: '', basePrice: '', rows: 10, columns: 6 });
-      setTimeout(() => setMsg(''), 3000);
+      setSubmitting(true);
+      const payload = {
+        flightNumber: flightForm.flightNumber,
+        airline: flightForm.airline,
+        source: flightForm.source,
+        destination: flightForm.destination,
+        departureTime: flightForm.departureTime,
+        arrivalTime: flightForm.arrivalTime,
+        basePrice: Number(flightForm.basePrice),
+        rows: Number(flightForm.rows),
+        columns: Number(flightForm.columns),
+      };
+      if (editId) {
+        await adminUpdateFlight(editId, payload);
+        flash('Flight updated!');
+        setEditId(null);
+      } else {
+        await adminCreateFlight(payload);
+        flash(`Flight created with ${payload.rows * payload.columns} seats!`);
+      }
+      setFlightForm(INITIAL_FLIGHT_FORM);
+      setShowAddFlight(false);
+      loadFlights();
+      loadStats();
     } catch (err) {
-      setMsg('Error: ' + (err.response?.data?.message || 'Failed'));
-    }
+      flash('Error: ' + (err.response?.data?.message || 'Failed to save flight'));
+    } finally { setSubmitting(false); }
   };
 
   const handleDeleteFlight = async (id) => {
     if (!window.confirm('Delete this flight and all its seats and bookings?')) return;
-    await adminDeleteFlight(id);
-    const affectedBookings = bookings.filter(b => b.flightId?._id === id);
-
-    setFlights(prev => prev.filter(f => f._id !== id));
-    setBookings(prev => prev.map(b => b.flightId?._id === id ? { ...b, status: "CANCELLED" } : b));
-
-    setStats(prev => ({ 
-      ...prev, 
-      totalFlights: prev.totalFlights - 1, 
-      totalBookings: prev.totalBookings - affectedBookings.length, 
-      cancelledBookings: prev.cancelledBookings + affectedBookings.length,
-      totalRevenue: prev.totalRevenue - (affectedBookings.reduce((sum, b) => sum + (b.priceBreakdown?.finalPrice || 0), 0))
-    }));
-
-    setMsg('Flight deleted.');
-    setTimeout(() => setMsg(''), 3000);
+    try { await adminDeleteFlight(id); flash('Flight deleted'); loadFlights(); loadStats(); }
+    catch { flash('Error: Delete failed'); }
   };
 
-  const handleCreateRule = async (e) => {
-    e.preventDefault();
-    try {
-      await adminCreatePricingRule(newRule);
-      const r = await adminGetPricingRules();
-      setRules(r.data.rules);
-      setMsg('Pricing rule created!');
-      setNewRule({ name: '', type: 'DEMAND', charge: '', condition: { threshold: '', hoursBeforeDeparture: '', seatType: '' } });
-      setTimeout(() => setMsg(''), 3000);
-    } catch (err) {
-      setMsg('Error: ' + (err.response?.data?.message || 'Failed'));
+  const handleEditFlight = (flight) => {
+    setFlightForm({
+      flightNumber: flight.flightNumber,
+      airline: flight.airline,
+      source: flight.source,
+      destination: flight.destination,
+      departureTime: new Date(new Date(flight.departureTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+      arrivalTime: new Date(new Date(flight.arrivalTime).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
+      basePrice: flight.basePrice,
+      rows: flight.seatLayout?.rows || 10,
+      columns: flight.seatLayout?.columns || 6,
+    });
+    setEditId(flight._id);
+    setShowAddFlight(true);
+  };
+
+  const buildCondition = (form) => {
+    switch (form.type) {
+      case 'DEMAND': return { threshold: Number(form.threshold) };
+      case 'TIME': return { hoursBeforeDeparture: Number(form.hoursBeforeDeparture) };
+      case 'SEAT_TYPE': return { seatType: form.seatType };
+      case 'CLASS': return { class: form.class };
+      default: return {};
     }
   };
 
-  const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const rf = (field, val) => setRuleForm(r => ({ ...r, [field]: val }));
 
-  const inputS = { width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none' };
-  const labelS = { display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' };
-
-  const tabConfig = {
-    overview: { label: 'Overview', icon: <BarChartIcon style={{ fontSize: 18 }} /> },
-    flights:  { label: 'Flights',  icon: <FlightIcon style={{ fontSize: 18 }} /> },
-    bookings: { label: 'Bookings', icon: <AirplaneTicketIcon style={{ fontSize: 18 }} /> },
-    pricing:  { label: 'Pricing',  icon: <CurrencyRupeeIcon style={{ fontSize: 18 }} /> },
+  const handleSaveRule = async (e) => {
+    e.preventDefault();
+    const payload = { name: ruleForm.name, description: ruleForm.description, type: ruleForm.type, charge: Number(ruleForm.charge), isActive: ruleForm.isActive, condition: buildCondition(ruleForm) };
+    try {
+      setSubmitting(true);
+      if (editRuleId) { await adminUpdatePricingRule(editRuleId, payload); flash('Pricing rule updated!'); setEditRuleId(null); }
+      else { await adminCreatePricingRule(payload); flash('Pricing rule created!'); }
+      setRuleForm(INITIAL_RULE_FORM);
+      setShowRuleForm(false);
+      loadRules();
+    } catch (err) {
+      flash('Error: ' + (err.response?.data?.message || 'Failed to save rule'));
+    } finally { setSubmitting(false); }
   };
 
-  if (loading) {
-  return (
-    <div style={{
-      height: "60vh",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      flexDirection: "column",
-      gap: 12
-    }}>
-      <div className="spinner"></div>
-      <p style={{ color: "#64748b" }}>Loading dashboard...</p>
-    </div>
-  );
-}
+  const handleDeleteRule = async (id) => {
+    if (!window.confirm('Delete this pricing rule?')) return;
+    try { await adminDeletePricingRule(id); flash('Rule deleted'); loadRules(); }
+    catch { flash('Error: Failed to delete rule'); }
+  };
+
+  const handleEditRule = (rule) => {
+    setRuleForm({
+      name: rule.name, description: rule.description || '', type: rule.type, charge: rule.charge, isActive: rule.isActive,
+      threshold: rule.condition?.threshold ?? '', hoursBeforeDeparture: rule.condition?.hoursBeforeDeparture ?? '',
+      seatType: rule.condition?.seatType || 'WINDOW', class: rule.condition?.class || 'ECONOMY',
+    });
+    setEditRuleId(rule._id);
+    setShowRuleForm(true);
+  };
+
+  const handleToggleRule = async (rule) => {
+    try { await adminUpdatePricingRule(rule._id, { isActive: !rule.isActive }); flash(`Rule ${rule.isActive ? 'disabled' : 'enabled'}`); loadRules(); }
+    catch { flash('Error: Failed to toggle rule'); }
+  };
 
   return (
-    <div className="container" style={{ padding: '32px 24px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-        <div>
-          <h1 style={{ fontSize: 28, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <AdminPanelSettingsIcon style={{ fontSize: 32, color: '#0ea5e9' }} /> Admin Dashboard
-          </h1>
-          <p style={{ color: '#64748b' }}>Manage flights, bookings, and pricing rules</p>
-        </div>
-      </div>
-
-      {msg && (
-        <div className="fade-in" style={{ background: msg.startsWith('Error') ? '#fee2e2' : '#d1fae5', border: '1px solid', borderColor: msg.startsWith('Error') ? '#fca5a5' : '#6ee7b7', borderRadius: 10, padding: '10px 20px', marginBottom: 20, color: msg.startsWith('Error') ? '#991b1b' : '#065f46', fontWeight: 600 }}>
-          {msg}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 4, borderBottom: '2px solid #e2e8f0', marginBottom: 28 }}>
-        {Object.entries(tabConfig).map(([key, { label, icon }]) => (
-          <button key={key} onClick={() => setTab(key)} style={{
-            padding: '10px 20px', fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: tab === key ? '#0ea5e9' : '#64748b',
-            borderBottom: `3px solid ${tab === key ? '#0ea5e9' : 'transparent'}`,
-            marginBottom: -2, transition: 'all 0.15s',
-            display: 'flex', alignItems: 'center', gap: 6
-          }}>
-            {icon} {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Overview */}
-      {tab === 'overview' && stats && (
-        <div className="fade-in">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 32 }}>
-            {[
-              { label: 'Total Flights', value: stats.totalFlights, icon: <FlightIcon />, color: '#0ea5e9' },
-              { label: 'Confirmed Bookings', value: stats.totalBookings, icon: <AirplaneTicketIcon />, color: '#0ea5e9' },
-              { label: 'Registered Users', value: stats.totalUsers, icon: <PersonIcon />, color: '#0ea5e9' },
-              { label: 'Cancelled', value: stats.cancelledBookings, icon: <CancelPresentationIcon />, color: '#0ea5e9' },
-              { label: 'Total Revenue', value: `₹${stats.totalRevenue?.toLocaleString('en-IN')}`, icon: <CurrencyRupeeIcon />, color: '#0ea5e9' },
-            ].map(s => (
-              <div key={s.label} className="card" style={{ padding: 20, borderTop: `4px solid ${s.color}` }}>
-                <div style={{ marginBottom: 8, color: s.color, display: 'flex' }}>{s.icon}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'Syne, sans-serif', color: s.color }}>{s.value}</div>
-                <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>{s.label}</div>
-              </div>
+    <div className="page-content admin-page">
+      <div className="admin-header">
+        <div className="section">
+          <div className="admin-header-row">
+            <div>
+              <h1 className="admin-title">🛡 Admin Dashboard</h1>
+              <p className="admin-sub">Manage flights, bookings & system</p>
+            </div>
+            {tab === 'flights' && (
+              <button className="btn btn-primary" onClick={() => { setShowAddFlight(true); setEditId(null); setFlightForm(INITIAL_FLIGHT_FORM); }}>+ Add Flight</button>
+            )}
+            {tab === 'pricing' && (
+              <button className="btn btn-primary" onClick={() => { setShowRuleForm(true); setEditRuleId(null); setRuleForm(INITIAL_RULE_FORM); }}>+ Add Rule</button>
+            )}
+          </div>
+          <div className="admin-tabs">
+            {[['overview', 'Overview'], ['flights', 'Flights'], ['bookings', 'Bookings'], ['pricing', 'Pricing Rules']].map(([v, l]) => (
+              <button key={v} className={`admin-tab${tab === v ? ' active' : ''}`} onClick={() => setTab(v)}>{l}</button>
             ))}
           </div>
-
-          <div className="card" style={{ padding: 20 }}>
-            <h3 style={{ marginBottom: 16, fontSize: 16 }}>Recent Bookings</h3>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                    {['Reference', 'Passenger', 'Flight Number', 'Route', 'Seat', 'Amount', 'Status'].map(h => (
-                      <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {bookings.slice(0, 10).map(b => (
-                    <tr key={b._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#0ea5e9' }}>{b.bookingReference}</td>
-                      <td style={{ padding: '10px 12px' }}>{b.passengerName}</td>
-                      <td style={{ padding: '10px 12px' }}>{b.flightId?.flightNumber || 'Deleted'}</td>
-                      <td style={{ padding: '10px 12px', color: '#0f172a' }}>
-                        {b.flightId ? `${b.flightId.source} → ${b.flightId.destination}` : "-"}
-                      </td>
-                      <td style={{ padding: '10px 12px' }}>{b.seatNumber}</td>
-                      <td style={{ padding: '10px 12px', fontWeight: 600 }}>₹{b.priceBreakdown?.finalPrice?.toLocaleString('en-IN')}</td>
-                      <td style={{ padding: '10px 12px' }}>
-                        <span className={`badge ${b.status === 'CONFIRMED' ? 'badge-success' : b.status === 'CANCELLED' ? 'badge-danger' : 'badge-warning'}`}>
-                          {b.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
-      )}
+      </div>
 
-      {/* Flights */}
-      {tab === 'flights' && (
-        <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 24, alignItems: 'start' }}>
-          {/* Flight List */}
-          <div className="card" style={{ padding: 20 }}>
-            <h3 style={{ marginBottom: 16, fontSize: 16 }}>All Flights ({flights.length})</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {flights.map(f => (
-                <div key={f._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#f8fafc', borderRadius: 10 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{f.flightNumber} · {f.airline}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{f.source} → {f.destination} · {fmt(f.departureTime)}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontWeight: 700, color: '#0ea5e9' }}>₹{f.basePrice.toLocaleString('en-IN')}</span>
-                    <button onClick={() => handleDeleteFlight(f._id)} className="btn btn-danger" style={{ fontSize: 11, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><DeleteIcon style={{ fontSize: 14 }} /> Delete</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      <div className="section admin-content">
+        {msg && <div className="fade-in" style={{ background: msg.startsWith('Error') ? 'var(--red-50)' : 'var(--teal-50)', color: msg.startsWith('Error') ? 'var(--red-600)' : 'var(--teal-600)', borderRadius: 10, padding: '10px 20px', marginBottom: 20, fontWeight: 600 }}>{msg}</div>}
 
-          {/* Add Flight Form */}
-          <div className="card" style={{ padding: 20 }}>
-            <h3 style={{ marginBottom: 16, fontSize: 16 }}>Add New Flight</h3>
-            <form onSubmit={handleCreateFlight} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* OVERVIEW */}
+        {tab === 'overview' && stats && (
+          <div>
+            <div className="admin-stats-grid">
               {[
-                { key: 'flightNumber', label: 'Flight Number', placeholder: 'FW601' },
-                { key: 'airline', label: 'Airline', placeholder: 'Indigo' },
-                { key: 'basePrice', label: 'Base Price (₹)', placeholder: '4500', type: 'number' },
-              ].map(field => (
-                <div key={field.key}>
-                  <label style={labelS}>{field.label}</label>
-                  <input type={field.type || 'text'} placeholder={field.placeholder} value={newFlight[field.key]} required
-                    onChange={e => setNewFlight({ ...newFlight, [field.key]: e.target.value })} style={inputS} />
-                </div>
-              ))}
-              <div>
-                <label style={labelS}>From</label>
-                <select value={newFlight.source} required onChange={e => setNewFlight({ ...newFlight, source: e.target.value })} style={inputS}>
-                  <option value="">Select city</option>
-                  {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelS}>To</label>
-                <select value={newFlight.destination} required onChange={e => setNewFlight({ ...newFlight, destination: e.target.value })} style={inputS}>
-                  <option value="">Select city</option>
-                  {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelS}>Departure Time</label>
-                <input type="datetime-local" value={newFlight.departureTime} required onChange={e => setNewFlight({ ...newFlight, departureTime: e.target.value })} style={inputS} />
-              </div>
-              <div>
-                <label style={labelS}>Arrival Time</label>
-                <input type="datetime-local" value={newFlight.arrivalTime} required onChange={e => setNewFlight({ ...newFlight, arrivalTime: e.target.value })} style={inputS} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div>
-                  <label style={labelS}>Rows</label>
-                  <input type="number" value={newFlight.rows} min={15} max={60} onChange={e => setNewFlight({ ...newFlight, rows: e.target.value })} style={inputS} />
-                </div>
-                <div>
-                  <label style={labelS}>Columns</label>
-                  <input type="number" value={newFlight.columns} min={4} max={8} onChange={e => setNewFlight({ ...newFlight, columns: e.target.value })} style={inputS} />
-                </div>
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 12, marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <AddIcon style={{ fontSize: 18 }} /> Create Flight
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* All Bookings */}
-      {tab === 'bookings' && (
-        <div className="card fade-in" style={{ padding: 20 }}>
-          <h3 style={{ marginBottom: 16, fontSize: 16 }}>All Bookings ({bookings.length})</h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  {['Reference', 'Passenger', 'Flight Number', 'Route', 'Date', 'Seat', 'Amount', 'Status'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {bookings.map(b => (
-                  <tr key={b._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '10px 12px', fontWeight: 700, color: '#0ea5e9', whiteSpace: 'nowrap' }}>{b.bookingReference}</td>
-                    <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{b.passengerName}</td>
-                    <td style={{ padding: '10px 12px' }}>{b.flightId?.flightNumber || 'Deleted'}</td>
-                    <td style={{ padding: '10px 12px', color: '#0f172a' }}>
-                      {b.flightId ? `${b.flightId.source} → ${b.flightId.destination}` : "-"}
-                    </td>
-                    <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>{b.flightId ? fmt(b.flightId.departureTime) : '-'}</td>
-                    <td style={{ padding: '10px 12px' }}>{b.seatNumber}</td>
-                    <td style={{ padding: '10px 12px', fontWeight: 600 }}>₹{b.priceBreakdown?.finalPrice?.toLocaleString('en-IN')}</td>
-                    <td style={{ padding: '10px 12px' }}>
-                      <span className={`badge ${b.status === 'CONFIRMED' ? 'badge-success' : b.status === 'CANCELLED' ? 'badge-danger' : 'badge-warning'}`}>
-                        {b.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Pricing Rules */}
-      {tab === 'pricing' && (
-        <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 24, alignItems: 'start' }}>
-          <div className="card" style={{ padding: 20 }}>
-            <h3 style={{ marginBottom: 16, fontSize: 16 }}>Active Pricing Rules</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {rules.map(rule => (
-                <div key={rule._id} style={{ padding: '14px 16px', background: '#f8fafc', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{rule.name}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{rule.type} · {rule.description}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                      Condition: {JSON.stringify(rule.condition)}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontWeight: 800, color: '#f59e0b', fontFamily: 'Syne, sans-serif', fontSize: 16 }}>+₹{rule.charge}</span>
-                    <span className={`badge ${rule.isActive ? 'badge-success' : 'badge-danger'}`}>{rule.isActive ? 'Active' : 'Inactive'}</span>
-                    <button onClick={async () => { await adminDeletePricingRule(rule._id); setRules(rules.filter(r => r._id !== rule._id)); }} className="btn btn-danger" style={{ fontSize: 11, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><DeleteIcon style={{ fontSize: 14 }} /> Delete</button>
-                  </div>
+                ['Confirmed Bookings', stats.totalBookings, '/ticket-flight.png', 'blue'],
+                ['Registered Users', stats.totalUsers, '/passenger.png', 'blue'],
+                ['Cancelled', stats.cancelledBookings, '/cancel.png', 'red'],
+                ['Total Revenue', `₹${stats.totalRevenue?.toLocaleString('en-IN')}`, '/money.png', 'amber'],
+                ['Active Flights', stats.totalFlights, '/plane.png', 'green'],
+              ].map(([label, val, icon, color]) => (
+                <div key={label} className={`admin-stat-card ac-${color}`}>
+                  <div className="asc-icon"><img src={icon} alt={label} className="asc-img" /></div>
+                  <div className="asc-val">{val}</div>
+                  <div className="asc-label">{label}</div>
                 </div>
               ))}
             </div>
+
+            <div className="admin-info-cards">
+              <div className="card admin-info-card">
+                <h3>Quick Guide</h3>
+                <ul>
+                  <li>Go to <strong>Flights</strong> tab to add or manage flights</li>
+                  <li>Go to <strong>Bookings</strong> tab to view all user bookings</li>
+                  <li>Go to <strong>Pricing Rules</strong> tab to configure dynamic surcharges</li>
+                  <li>Seats are auto-generated when a flight is created</li>
+                </ul>
+              </div>
+              <div className="card admin-info-card">
+                <h3>Pricing Rules</h3>
+                <ul>
+                  <li><strong>High Demand</strong> — surcharge when occupancy exceeds a threshold %</li>
+                  <li><strong>Last Minute</strong> — surcharge when booking within N hours of departure</li>
+                  <li><strong>Seat Type</strong> — per-seat charge for Window, Middle, or Aisle seats</li>
+                  <li><strong>Cabin Class</strong> — per-seat charge for Economy or Business seats</li>
+                </ul>
+              </div>
+            </div>
           </div>
-          
-          {/* Add Pricing Rule */}
-          <div className="card" style={{ padding: 20 }}>
-            <h3 style={{ marginBottom: 16, fontSize: 16 }}>Add Pricing Rule</h3>
-            <form onSubmit={handleCreateRule} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={labelS}>Rule Name</label>
-                <input value={newRule.name} required onChange={e => setNewRule({ ...newRule, name: e.target.value })} placeholder="High Demand Surcharge" style={inputS} />
+        )}
+
+        {/* FLIGHTS */}
+        {tab === 'flights' && (
+          <div>
+            {showAddFlight && (
+              <div className="add-flight-form card">
+                <div className="aff-header">
+                  <h3>{editId ? 'Edit Flight' : 'Add New Flight'}</h3>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowAddFlight(false); setEditId(null); }}>✕ Close</button>
+                </div>
+                <form onSubmit={handleAddFlight} className="aff-grid">
+                  <div className="form-group"><label className="form-label">Flight Number</label>
+                    <input className="form-input" placeholder="SV601" value={flightForm.flightNumber} onChange={e => ff('flightNumber', e.target.value)} required /></div>
+                  <div className="form-group"><label className="form-label">Airline</label>
+                    <input className="form-input" placeholder="SkyJet" value={flightForm.airline} onChange={e => ff('airline', e.target.value)} required /></div>
+                  <div className="form-group"><label className="form-label">Source City</label>
+                    <select className="form-input" value={flightForm.source} onChange={e => ff('source', e.target.value)} required>
+                      <option value="">Select city</option>
+                      {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+                    </select></div>
+                  <div className="form-group"><label className="form-label">Destination City</label>
+                    <select className="form-input" value={flightForm.destination} onChange={e => ff('destination', e.target.value)} required>
+                      <option value="">Select city</option>
+                      {CITIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+                    </select></div>
+                  <div className="form-group"><label className="form-label">Departure Time</label>
+                    <input className="form-input" type="datetime-local" value={flightForm.departureTime} onChange={e => ff('departureTime', e.target.value)} required /></div>
+                  <div className="form-group"><label className="form-label">Arrival Time</label>
+                    <input className="form-input" type="datetime-local" value={flightForm.arrivalTime} onChange={e => ff('arrivalTime', e.target.value)} required /></div>
+                  <div className="form-group"><label className="form-label">Base Price (₹)</label>
+                    <input className="form-input" type="number" placeholder="5000" min="100" value={flightForm.basePrice} onChange={e => ff('basePrice', e.target.value)} required /></div>
+                  <div className="form-group"><label className="form-label">Rows</label>
+                    <input className="form-input" type="number" min="2" max="60" value={flightForm.rows} onChange={e => ff('rows', e.target.value ? parseInt(e.target.value) : '')} required />
+                    <span className="form-hint">Total seat rows</span></div>
+                  <div className="form-group"><label className="form-label">Columns</label>
+                    <input className="form-input" type="number" min="2" max="8" value={flightForm.columns} onChange={e => ff('columns', e.target.value ? parseInt(e.target.value) : '')} required />
+                    <span className="form-hint">Seats per row (e.g. 6 = A B C | D E F)</span></div>
+                  <div className="aff-submit">
+                    <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Saving...' : editId ? 'Update Flight' : 'Create Flight'}</button>
+                    <button type="button" className="btn btn-outline" onClick={() => { setShowAddFlight(false); setEditId(null); }}>Cancel</button>
+                  </div>
+                </form>
               </div>
-              <div>
-                <label style={labelS}>Type</label>
-                <select value={newRule.type} onChange={e => setNewRule({ ...newRule, type: e.target.value })} style={inputS}>
-                  <option value="DEMAND">DEMAND</option>
-                  <option value="TIME">TIME</option>
-                  <option value="SEAT_TYPE">SEAT_TYPE</option>
-                  <option value="CLASS">CLASS</option>
-                </select>
+            )}
+
+            {loading ? <div className="admin-loading"><div className="spinner spinner-lg" /></div> : (
+              <div className="flights-table-wrap card">
+                <table className="admin-table">
+                  <thead><tr><th>Flight</th><th>Route</th><th>Departure</th><th>Base Price</th><th>Seats</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {flights.map(f => (
+                      <tr key={f._id}>
+                        <td><div className="at-flight-num">{f.flightNumber}</div><div className="at-airline">{f.airline}</div></td>
+                        <td>{f.source} → {f.destination}</td>
+                        <td className="at-date">{fmtDate(f.departureTime)}</td>
+                        <td>₹{f.basePrice?.toLocaleString('en-IN')}</td>
+                        <td><span className="badge badge-blue">{f.seatLayout?.rows ?? 10}r × {f.seatLayout?.columns ?? 6}c</span></td>
+                        <td><span className={`badge ${f.status === 'SCHEDULED' ? 'badge-green' : 'badge-amber'}`}>{f.status}</span></td>
+                        <td>
+                          <div className="at-actions">
+                            <button className="btn btn-outline btn-sm" onClick={() => handleEditFlight(f)}>Edit</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDeleteFlight(f._id)}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              {newRule.type === 'DEMAND' && (
-                <div>
-                  <label style={labelS}>Occupancy Threshold (%)</label>
-                  <input type="number" value={newRule.condition.threshold} onChange={e => setNewRule({ ...newRule, condition: { ...newRule.condition, threshold: e.target.value } })} placeholder="70" style={inputS} />
-                </div>
-              )}
-              {newRule.type === 'TIME' && (
-                <div>
-                  <label style={labelS}>Hours Before Departure</label>
-                  <input type="number" value={newRule.condition.hoursBeforeDeparture} onChange={e => setNewRule({ ...newRule, condition: { ...newRule.condition, hoursBeforeDeparture: e.target.value } })} placeholder="48" style={inputS} />
-                </div>
-              )}
-              {newRule.type === 'SEAT_TYPE' && (
-                <div>
-                  <label style={labelS}>Seat Type</label>
-                  <select value={newRule.condition.seatType} onChange={e => setNewRule({ ...newRule, condition: { ...newRule.condition, seatType: e.target.value } })} style={inputS}>
-                    <option value="WINDOW">WINDOW</option>
-                    <option value="MIDDLE">MIDDLE</option>
-                    <option value="AISLE">AISLE</option>
-                  </select>
-                </div>
-              )}
-              {newRule.type === 'CLASS' && (
-                <div>
-                  <label style={labelS}>Cabin Class</label>
-                  <select value={newRule.condition.class} onChange={e => setNewRule({ ...newRule, condition: { ...newRule.condition, class: e.target.value } })} style={inputS}>
-                    <option value="ECONOMY">ECONOMY</option>
-                    <option value="BUSINESS">BUSINESS</option>
-                  </select>
-                </div>
-              )}
-              <div>
-                <label style={labelS}>Surcharge (₹)</label>
-                <input type="number" value={newRule.charge} required onChange={e => setNewRule({ ...newRule, charge: e.target.value })} placeholder="1000" style={inputS} />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 12, marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <AddIcon style={{ fontSize: 18 }} /> Add Rule
-              </button>
-            </form>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* BOOKINGS */}
+        {tab === 'bookings' && (
+          <div>
+            {loading ? <div className="admin-loading"><div className="spinner spinner-lg" /></div> : (
+              <div className="bookings-table-wrap card">
+                <table className="admin-table">
+                  <thead><tr><th>Booking Ref</th><th>Passenger</th><th>Flight</th><th>Route</th><th>Date</th><th>Seat</th><th>Total</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {bookings.map(b => (
+                      <tr key={b._id}>
+                        <td><span className="at-ref">{b.bookingReference}</span></td>
+                        <td>
+                          <div className="at-user">{b.passengerName}</div>
+                          <div className="at-email">{b.userId?.email || ''}</div>
+                        </td>
+                        <td className="at-flight-num">{b.flightId?.flightNumber || '—'}</td>
+                        <td>{b.flightId ? `${b.flightId.source} → ${b.flightId.destination}` : '—'}</td>
+                        <td className="at-date">{b.flightId?.departureTime ? fmtDate(b.flightId.departureTime) : '—'}</td>
+                        <td>{b.seatNumber}</td>
+                        <td className="at-price">₹{b.priceBreakdown?.finalPrice?.toLocaleString('en-IN')}</td>
+                        <td><span className={`badge ${b.status === 'CONFIRMED' ? 'badge-green' : 'badge-red'}`}>{b.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PRICING RULES */}
+        {tab === 'pricing' && (
+          <div>
+            {showRuleForm && (
+              <div className="add-flight-form card">
+                <div className="aff-header">
+                  <h3>{editRuleId ? 'Edit Pricing Rule' : 'Add Pricing Rule'}</h3>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowRuleForm(false); setEditRuleId(null); }}>✕ Close</button>
+                </div>
+                <form onSubmit={handleSaveRule} className="aff-grid">
+                  <div className="form-group">
+                    <label className="form-label">Rule Name</label>
+                    <input className="form-input" placeholder="e.g. Peak Season Demand" value={ruleForm.name} onChange={e => rf('name', e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Rule Type</label>
+                    <select className="form-input" value={ruleForm.type} onChange={e => rf('type', e.target.value)}>
+                      <option value="DEMAND">High Demand (occupancy %)</option>
+                      <option value="TIME">Last Minute (hours before departure)</option>
+                      <option value="SEAT_TYPE">Seat Type (Window / Middle / Aisle)</option>
+                      <option value="CLASS">Cabin Class (Economy / Business)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Surcharge (₹)</label>
+                    <input className="form-input" type="number" min="0" placeholder="1000" value={ruleForm.charge} onChange={e => rf('charge', e.target.value ? parseInt(e.target.value) : '')} required />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <select className="form-input" value={ruleForm.isActive ? 'true' : 'false'} onChange={e => rf('isActive', e.target.value === 'true')}>
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                  </div>
+                  {ruleForm.type === 'DEMAND' && (
+                    <div className="form-group">
+                      <label className="form-label">Occupancy Threshold (%)</label>
+                      <input className="form-input" type="number" min="1" max="100" placeholder="70" value={ruleForm.threshold} onChange={e => rf('threshold', e.target.value ? parseInt(e.target.value) : '')} required />
+                      <span className="form-hint">Surcharge applies when seats booked ≥ this %</span>
+                    </div>
+                  )}
+                  {ruleForm.type === 'TIME' && (
+                    <div className="form-group">
+                      <label className="form-label">Hours Before Departure</label>
+                      <input className="form-input" type="number" min="1" placeholder="48" value={ruleForm.hoursBeforeDeparture} onChange={e => rf('hoursBeforeDeparture', e.target.value ? parseInt(e.target.value) : '')} required />
+                      <span className="form-hint">Surcharge applies when booking within this window</span>
+                    </div>
+                  )}
+                  {ruleForm.type === 'SEAT_TYPE' && (
+                    <div className="form-group">
+                      <label className="form-label">Seat Type</label>
+                      <select className="form-input" value={ruleForm.seatType} onChange={e => rf('seatType', e.target.value)}>
+                        <option value="WINDOW">Window</option>
+                        <option value="MIDDLE">Middle</option>
+                        <option value="AISLE">Aisle</option>
+                      </select>
+                    </div>
+                  )}
+                  {ruleForm.type === 'CLASS' && (
+                    <div className="form-group">
+                      <label className="form-label">Cabin Class</label>
+                      <select className="form-input" value={ruleForm.class} onChange={e => rf('class', e.target.value)}>
+                        <option value="ECONOMY">Economy</option>
+                        <option value="BUSINESS">Business</option>
+                      </select>
+                    </div>
+                  )}
+                  <div className="form-group aff-full">
+                    <label className="form-label">Description (optional)</label>
+                    <input className="form-input" placeholder="Short note about this rule" value={ruleForm.description} onChange={e => rf('description', e.target.value)} />
+                  </div>
+                  <div className="aff-submit">
+                    <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Saving...' : editRuleId ? 'Update Rule' : 'Create Rule'}</button>
+                    <button type="button" className="btn btn-outline" onClick={() => { setShowRuleForm(false); setEditRuleId(null); }}>Cancel</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {loading ? <div className="admin-loading"><div className="spinner spinner-lg" /></div> : rules.length === 0 ? (
+              <div className="card admin-empty">
+                <div className="empty-icon">📋</div>
+                <p>No pricing rules yet. Click <strong>+ Add Rule</strong> to create one.</p>
+                <p className="empty-hint">Until at least one rule exists, hardcoded fallback values will be used.</p>
+              </div>
+            ) : (
+              <div className="pricing-rules-grid">
+                {rules.map(rule => {
+                  const meta = RULE_TYPE_META[rule.type] || {};
+                  return (
+                    <div key={rule._id} className={`card pricing-rule-card${rule.isActive ? '' : ' rule-inactive'}`}>
+                      <div className="prc-header">
+                        <div className="prc-title-row">
+                          <span className="prc-icon">{meta.icon}</span>
+                          <div>
+                            <div className="prc-name">{rule.name}</div>
+                            {rule.description && <div className="prc-desc">{rule.description}</div>}
+                          </div>
+                        </div>
+                        <div className="prc-badges">
+                          <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                          <span className={`badge ${rule.isActive ? 'badge-green' : 'badge-gray'}`}>{rule.isActive ? 'Active' : 'Inactive'}</span>
+                        </div>
+                      </div>
+                      <div className="prc-body">
+                        <div className="prc-detail"><span>Condition</span><strong>{conditionSummary(rule)}</strong></div>
+                        <div className="prc-detail"><span>Surcharge</span><strong className="prc-charge">+₹{rule.charge.toLocaleString('en-IN')}</strong></div>
+                      </div>
+                      <div className="prc-actions">
+                        <button className="btn btn-outline btn-sm" onClick={() => handleToggleRule(rule)}>{rule.isActive ? 'Disable' : 'Enable'}</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => handleEditRule(rule)}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDeleteRule(rule._id)}>Delete</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
