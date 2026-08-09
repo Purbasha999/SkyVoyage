@@ -18,9 +18,10 @@ export const getMe = () => API.get('/auth/me');
 export const searchFlights = (params) => API.get('/flights/search', { params });
 export const getFlightById = (id) => API.get(`/flights/${id}`);
 export const getAllFlights = () => API.get('/flights');
+export const getFlightPrice = (id, data) => API.post(`/flights/${id}/price`, data);
 
-export const lockSeat = (data) => API.post('/seats/lock', data);
-export const releaseSeat = (data) => API.post('/seats/release', data);
+export const lockSeats = (data) => API.post('/seats/lock', data);
+export const releaseSeats = (data) => API.post('/seats/release', data);
 export const getSeatPrice = (params) => API.get('/seats/price', { params });
 
 export const bookSeats = (data) => API.post('/bookings/confirm', data);
@@ -28,6 +29,9 @@ export const confirmBooking = (data) => API.post('/bookings/confirm', data);
 export const cancelBooking = (data) => API.post('/bookings/cancel', data);
 export const getUserBookings = () => API.get('/bookings/user');
 export const getBookingById = (id) => API.get(`/bookings/${id}`);
+
+export const getAddOns = (params) => API.get('/addons', { params });
+export const applyPromoCode = (data) => API.post('/promo/apply', data);
 
 export const adminCreateFlight = (data) => API.post('/admin/flights', data);
 export const adminUpdateFlight = (id, data) => API.put(`/admin/flights/${id}`, data);

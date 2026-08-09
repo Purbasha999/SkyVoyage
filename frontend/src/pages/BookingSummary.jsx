@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { bookSeats } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import AddOnsSection from '../components/AddOnsSection';
 
 const fmt = (date) => new Date(date).toLocaleString('en-IN', {
   day: 'numeric', month: 'short', year: 'numeric',
@@ -12,23 +12,30 @@ const BookingSummary = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { flight, seats, priceBreakdowns } = location.state || {};
-
-  const breakdownBySeat = Object.fromEntries(
-    (priceBreakdowns || []).map(p => [p.seatNumber, p])
-  );
-  const totalPrice = (priceBreakdowns || []).reduce((s, p) => s + (p.finalPrice || 0), 0);
+  const { flight, seats, priceBreakdown, lockExpiry } = location.state || {};
 
   const [passengers, setPassengers] = useState(
     seats?.map((_, i) => ({
       passengerName: i === 0 ? (user?.name || '') : '',
+      passengerAge: '',
+      passengerGender: 'MALE',
       passengerPhone: ''
     })) || []
   );
-  const [loading, setLoading] = useState(false);
+  const [selectedAddOns, setSelectedAddOns] = useState([]);
   const [error, setError] = useState('');
 
-  if (!flight || !seats?.length || !priceBreakdowns?.length) {
+  // Countdown for the lock window so the user knows they're on the clock.
+  const [secondsLeft, setSecondsLeft] = useState(null);
+  useEffect(() => {
+    if (!lockExpiry) return;
+    const tick = () => setSecondsLeft(Math.max(0, Math.round((new Date(lockExpiry) - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [lockExpiry]);
+
+  if (!flight || !seats?.length || !priceBreakdown) {
     return (
       <div className="container" style={{ padding: 60, textAlign: 'center' }}>
         <h2>Session Expired</h2>
@@ -38,200 +45,154 @@ const BookingSummary = () => {
     );
   }
 
-const updatePassenger = (idx, field, value) => {
+  const addOnTotal = selectedAddOns.reduce((sum, a) => sum + a.price, 0);
+  const mealTotal = selectedAddOns.filter(a => a.type === 'meal').reduce((s, a) => s + a.price, 0);
+  const baggageTotal = selectedAddOns.filter(a => a.type === 'baggage').reduce((s, a) => s + a.price, 0);
+  const grandTotal = priceBreakdown.finalPrice + addOnTotal;
+
+  const updatePassenger = (idx, field, value) => {
     setPassengers(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p));
   };
 
-  const handleConfirm = async () => {
-    const missing = passengers.findIndex(p => !p.passengerName.trim());
+  const handleConfirm = () => {
+    const missing = passengers.findIndex(p => !p.passengerName.trim() || !p.passengerAge);
     if (missing !== -1) {
-      setError(`Passenger name is required for seat ${seats[missing].seatNumber}.`);
+      setError(`Full name and age are required for seat ${seats[missing].seatNumber}.`);
       return;
     }
-
-    setLoading(true);
     setError('');
-
-    try {
-      const seatBookings = seats.map((seat, i) => ({
-        seatNumber: seat.seatNumber,
-        passengerName: passengers[i].passengerName.trim(),
-        passengerPhone: passengers[i].passengerPhone.trim()
-      }));
-
-      const res = await bookSeats({ flightId: flight._id, seats: seatBookings });
-      navigate('/bookings', { state: { newBookings: res.data.bookings } });
-    } catch (err) {
-      setError(err.response?.data?.message || 'Booking failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    navigate('/payment', {
+      state: {
+        bookingData: {
+          type: 'oneway',
+          flight, seats, priceBreakdown, passengers,
+          addOns: selectedAddOns,
+          totalPrice: grandTotal
+        }
+      }
+    });
   };
 
   return (
-    <div className="container" style={{ padding: '32px 24px', maxWidth: 760, margin: '0 auto' }}>
+    <div className="container" style={{ padding: '32px 24px', maxWidth: 900, margin: '0 auto' }}>
       <h1 style={{ fontSize: 28, marginBottom: 4 }}>Booking Summary</h1>
-      <p style={{ color: '#64748b', marginBottom: 28 }}>Review your details and confirm your booking.</p>
+      <p style={{ color: '#64748b', marginBottom: 20 }}>Review your details, add extras, and proceed to payment.</p>
 
-      {/* Flight Details */}
-      <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-        <SectionLabel>Flight Details</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <Field label="Airline" value={flight.airline} />
-          <Field label="Flight No." value={flight.flightNumber} />
-          <Field label="From" value={flight.source} />
-          <Field label="To" value={flight.destination} />
-          <Field label="Departure" value={fmt(flight.departureTime)} />
-          <Field label="Arrival" value={fmt(flight.arrivalTime)} />
-        </div>
-      </div>
-
-      {/* Seats Summary */}
-      <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-        <SectionLabel>Selected Seats ({seats.length})</SectionLabel>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {seats.map(seat => (
-            <div key={seat.seatNumber} style={{
-              padding: '10px 18px', background: '#dbeafe', borderRadius: 12,
-              textAlign: 'center', minWidth: 72
-            }}>
-              <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'Syne, sans-serif', color: '#1d4ed8' }}>{seat.seatNumber}</div>
-              <div style={{ fontSize: 11, color: '#3b82f6', marginTop: 2 }}>{seat.seatType}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Price Breakdown */}
-      <div className="card" style={{ padding: 24, marginBottom: 16 }}>
-        <SectionLabel>Price Breakdown</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {seats.map((seat, idx) => {
-            const bd = breakdownBySeat[seat.seatNumber];
-            if (!bd) return null;
-            const isLast = idx === seats.length - 1;
-            return (
-              <div key={seat.seatNumber} style={{ paddingBottom: isLast ? 0 : 12, marginBottom: isLast ? 0 : 4, borderBottom: isLast ? 'none' : '1px dashed #e2e8f0' }}>
-                {seats.length > 1 && (
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 6 }}>
-                    Seat {seat.seatNumber} — {seat.seatType}{seat.seatClass === 'BUSINESS' ? ' · Business' : ''}
-                  </div>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <PriceRow label="Base Price" value={`₹${bd.basePrice.toLocaleString('en-IN')}`} />
-                  {bd.demandCharge > 0 && <PriceRow label="Demand Charge" value={`+₹${bd.demandCharge.toLocaleString('en-IN')}`} accent="#f59e0b" />}
-                  {bd.lateBookingCharge > 0 && <PriceRow label="Late Booking" value={`+₹${bd.lateBookingCharge.toLocaleString('en-IN')}`} accent="#ef4444" />}
-                  {bd.seatTypeCharge > 0 && <PriceRow label="Window Seat" value={`+₹${bd.seatTypeCharge.toLocaleString('en-IN')}`} accent="#8b5cf6" />}
-                  {bd.seatClassCharge > 0 && <PriceRow label="Business Class" value={`+₹${bd.seatClassCharge.toLocaleString('en-IN')}`} accent="#f59e0b" />}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, color: '#0f172a', paddingTop: 4 }}>
-                    <span>Seat total</span>
-                    <span>₹{bd.finalPrice.toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          <div style={{ borderTop: '2px solid #0f172a', paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 20, fontFamily: 'Syne, sans-serif' }}>
-            <span>Total Payable</span>
-            <span style={{ color: '#0ea5e9' }}>₹{totalPrice.toLocaleString('en-IN')}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Per-passenger details */}
-      <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-        <SectionLabel>Passenger Details</SectionLabel>
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={labelStyle}>Email (account)</label>
-          <input value={user?.email} disabled style={{ ...inputStyle, background: '#f8fafc', color: '#94a3b8' }} />
-        </div>
-
-        {seats.map((seat, idx) => (
-          <div key={seat.seatNumber} style={{
-            marginBottom: idx < seats.length - 1 ? 24 : 0,
-            paddingBottom: idx < seats.length - 1 ? 24 : 0,
-            borderBottom: idx < seats.length - 1 ? '1px solid #f1f5f9' : 'none'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <span style={{
-                background: '#dbeafe', color: '#1d4ed8',
-                fontWeight: 800, fontSize: 14, borderRadius: 8,
-                padding: '4px 12px', fontFamily: 'Syne, sans-serif'
-              }}>
-                Seat {seat.seatNumber}
-              </span>
-              <span style={{ fontSize: 12, color: '#64748b' }}>{seat.seatType}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={labelStyle}>Full Name *</label>
-                <input
-                  value={passengers[idx].passengerName}
-                  onChange={e => updatePassenger(idx, 'passengerName', e.target.value)}
-                  placeholder={`Passenger ${idx + 1} name`}
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Phone (optional)</label>
-                <input
-                  value={passengers[idx].passengerPhone}
-                  onChange={e => updatePassenger(idx, 'passengerPhone', e.target.value)}
-                  placeholder="+91 98765 43210"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {error && (
-        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#991b1b' }}>
-          {error}
+      {secondsLeft != null && (
+        <div style={{
+          background: secondsLeft < 60 ? '#fee2e2' : '#fef3c7',
+          border: `1px solid ${secondsLeft < 60 ? '#fca5a5' : '#fcd34d'}`,
+          borderRadius: 10, padding: '10px 16px', marginBottom: 20,
+          color: secondsLeft < 60 ? '#991b1b' : '#92400e', fontSize: 13, fontWeight: 600
+        }}>
+          🔒 Seats locked — complete checkout within {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} or they'll be released.
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 12 }}>
-        <button onClick={() => navigate(-1)} className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', padding: 14 }}>
-          ← Back
-        </button>
-        <button
-          onClick={handleConfirm}
-          disabled={loading}
-          className="btn btn-primary"
-          style={{ flex: 2, justifyContent: 'center', padding: 14, fontSize: 16, borderRadius: 12 }}
-        >
-          {loading
-            ? <><span className="spin" style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: 'white', borderRadius: '50%', display: 'inline-block' }} /> Confirming...</>
-            : `Confirm ${seats.length} Booking${seats.length > 1 ? 's' : ''}`
-          }
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20, alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Passenger Details */}
+          <div className="card" style={{ padding: 24 }}>
+            <SectionLabel>Passenger Details</SectionLabel>
+            {seats.map((seat, idx) => (
+              <div key={seat.seatNumber} style={{
+                marginBottom: idx < seats.length - 1 ? 20 : 0,
+                paddingBottom: idx < seats.length - 1 ? 20 : 0,
+                borderBottom: idx < seats.length - 1 ? '1px solid #f1f5f9' : 'none'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <span style={{ background: '#dbeafe', color: '#1d4ed8', fontWeight: 800, fontSize: 13, borderRadius: 8, padding: '4px 10px', fontFamily: 'Syne, sans-serif' }}>
+                    Seat {seat.seatNumber}
+                  </span>
+                  <span style={{ fontSize: 12, color: '#64748b' }}>{seat.seatType}{seat.seatClass === 'BUSINESS' ? ' · Business' : ''}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Full Name *</label>
+                    <input style={inputStyle} value={passengers[idx].passengerName} placeholder={`Passenger ${idx + 1}`} onChange={e => updatePassenger(idx, 'passengerName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Age *</label>
+                    <input style={inputStyle} type="number" min="1" max="120" value={passengers[idx].passengerAge} onChange={e => updatePassenger(idx, 'passengerAge', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Gender</label>
+                    <select style={inputStyle} value={passengers[idx].passengerGender} onChange={e => updatePassenger(idx, 'passengerGender', e.target.value)}>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Phone (optional)</label>
+                  <input style={inputStyle} value={passengers[idx].passengerPhone} placeholder="+91 98765 43210" onChange={e => updatePassenger(idx, 'passengerPhone', e.target.value)} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <AddOnsSection selected={selectedAddOns} setSelected={setSelectedAddOns} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Flight summary */}
+          <div className="card" style={{ padding: 20 }}>
+            <SectionLabel>Flight Details</SectionLabel>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{flight.airline} · {flight.flightNumber}</div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>{flight.source} → {flight.destination}</div>
+            <div style={{ fontSize: 13, color: '#64748b' }}>{fmt(flight.departureTime)}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+              {seats.map(s => <span key={s.seatNumber} className="badge badge-info">{s.seatNumber}</span>)}
+            </div>
+          </div>
+
+          {/* Price */}
+          <div className="card" style={{ padding: 20 }}>
+            <SectionLabel>Price Breakdown</SectionLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <PriceRow label={`Base fare (${seats.length} pax)`} value={`₹${priceBreakdown.basePrice.toLocaleString('en-IN')}`} />
+              {priceBreakdown.demandCharge > 0 && <PriceRow label="High demand" value={`+₹${priceBreakdown.demandCharge.toLocaleString('en-IN')}`} accent="#f59e0b" />}
+              {priceBreakdown.lateBookingCharge > 0 && <PriceRow label="Last-minute" value={`+₹${priceBreakdown.lateBookingCharge.toLocaleString('en-IN')}`} accent="#ef4444" />}
+              {priceBreakdown.seatTypeCharge > 0 && <PriceRow label="Seat charges" value={`+₹${priceBreakdown.seatTypeCharge.toLocaleString('en-IN')}`} accent="#8b5cf6" />}
+              {priceBreakdown.seatClassCharge > 0 && <PriceRow label="Business class" value={`+₹${priceBreakdown.seatClassCharge.toLocaleString('en-IN')}`} accent="#f59e0b" />}
+              <PriceRow label="Taxes & GST (18%)" value={`₹${priceBreakdown.taxes.toLocaleString('en-IN')}`} />
+              {mealTotal > 0 && <PriceRow label="Meals" value={`+₹${mealTotal.toLocaleString('en-IN')}`} />}
+              {baggageTotal > 0 && <PriceRow label="Excess baggage" value={`+₹${baggageTotal.toLocaleString('en-IN')}`} />}
+              <div style={{ borderTop: '2px solid #0f172a', paddingTop: 10, marginTop: 4, display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 18, fontFamily: 'Syne, sans-serif' }}>
+                <span>Total</span>
+                <span>₹{grandTotal.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '10px 16px', color: '#991b1b', fontSize: 13 }}>
+              {error}
+            </div>
+          )}
+
+          <button onClick={handleConfirm} className="btn btn-primary" style={{ width: '100%', padding: 14, fontSize: 16, borderRadius: 12, justifyContent: 'center' }}>
+            Continue to Payment →
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
 const SectionLabel = ({ children }) => (
-  <h3 style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16 }}>{children}</h3>
-);
-
-const Field = ({ label, value }) => (
-  <div>
-    <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
-    <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>{value}</div>
-  </div>
+  <h3 style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>{children}</h3>
 );
 
 const PriceRow = ({ label, value, accent }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: accent || '#374151', padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
+  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: accent || '#374151', padding: '3px 0' }}>
     <span>{label}</span>
     <span>{value}</span>
   </div>
 );
 
-const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' };
-const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: 'white', fontSize: 14, outline: 'none', color: '#0f172a', boxSizing: 'border-box' };
+const labelStyle = { display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.03em' };
+const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', fontSize: 13, outline: 'none', color: '#0f172a', boxSizing: 'border-box' };
 
 export default BookingSummary;

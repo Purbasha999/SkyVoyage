@@ -24,20 +24,27 @@ const seatSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['AVAILABLE', 'BOOKED'],
+    enum: ['AVAILABLE', 'LOCKED', 'BOOKED'],
     default: 'AVAILABLE'
   },
-  bookedBy: {
+  // Concurrency handling: a seat is held for a short window while a user
+  // fills in passenger/payment details, then either confirmed or released.
+  lockedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null
   },
-  passengerName: {
-    type: String,
+  lockedAt: {
+    type: Date,
     default: null
   },
-  passengerPhone: {
-    type: String,
+  lockExpiry: {
+    type: Date,
+    default: null
+  },
+  bookedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
     default: null
   }
 });

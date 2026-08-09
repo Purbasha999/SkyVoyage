@@ -31,7 +31,7 @@ const AdminDashboard = () => {
 
   const [newRule, setNewRule] = useState({
     name: '', type: 'DEMAND', charge: '',
-    condition: { threshold: '', hoursBeforeDeparture: '', seatType: '' }
+    condition: { threshold: '', hoursBeforeDeparture: '', seatType: '', class: 'ECONOMY' }
   });
 
   useEffect(() => {
@@ -361,6 +361,7 @@ const AdminDashboard = () => {
                   <option value="DEMAND">DEMAND</option>
                   <option value="TIME">TIME</option>
                   <option value="SEAT_TYPE">SEAT_TYPE</option>
+                  <option value="CLASS">CLASS</option>
                 </select>
               </div>
               {newRule.type === 'DEMAND' && (
@@ -382,8 +383,15 @@ const AdminDashboard = () => {
                     <option value="WINDOW">WINDOW</option>
                     <option value="MIDDLE">MIDDLE</option>
                     <option value="AISLE">AISLE</option>
-                    <option value="MIDDLE">BUSINESS</option>
-                    <option value="MIDDLE">ECONOMY</option>
+                  </select>
+                </div>
+              )}
+              {newRule.type === 'CLASS' && (
+                <div>
+                  <label style={labelS}>Cabin Class</label>
+                  <select value={newRule.condition.class} onChange={e => setNewRule({ ...newRule, condition: { ...newRule.condition, class: e.target.value } })} style={inputS}>
+                    <option value="ECONOMY">ECONOMY</option>
+                    <option value="BUSINESS">BUSINESS</option>
                   </select>
                 </div>
               )}

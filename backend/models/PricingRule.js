@@ -5,17 +5,19 @@ const pricingRuleSchema = new mongoose.Schema({
   description: String,
   type: {
     type: String,
-    enum: ['DEMAND', 'TIME', 'SEAT_TYPE'],
+    // DEMAND     → fires once when occupancy >= {threshold}%
+    // TIME       → fires once when booking made within {hoursBeforeDeparture}h
+    // SEAT_TYPE  → fires per seat matching {seatType} (WINDOW/MIDDLE/AISLE) or {seatClass}
+    // CLASS      → fires per seat matching {class} (ECONOMY/BUSINESS)
+    enum: ['DEMAND', 'TIME', 'SEAT_TYPE', 'CLASS'],
     required: true
   },
   condition: {
-    // For DEMAND: price increases if more than {threshold}% seats are booked
-    // For TIME: price increases if booking made within {hoursBeforeDeparture} hours
-    // For SEAT_TYPE: price increases for {seatType} or {seatClass}
     threshold: Number,
     hoursBeforeDeparture: Number,
     seatType: String,
-    seatClass: String
+    seatClass: String,
+    class: { type: String, enum: ['ECONOMY', 'BUSINESS'] }
   },
   charge: { type: Number, required: true },
   isActive: { type: Boolean, default: true },

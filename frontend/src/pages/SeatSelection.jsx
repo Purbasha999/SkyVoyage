@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { getFlightById, getSeatPrice } from '../services/api';
+import { getFlightById, getFlightPrice, lockSeats, releaseSeats } from '../services/api';
 
 const fmt = (date) => new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
 const ruleTypeColor = {
-  DEMAND:    '#f59e0b',
-  TIME:      '#ef4444',
+  DEMAND: '#f59e0b',
+  TIME: '#ef4444',
   SEAT_TYPE: '#8b5cf6',
-  CLASS:     '#d97706',
+  CLASS: '#d97706',
 };
 
 const SeatSelection = () => {
@@ -20,25 +20,9 @@ const SeatSelection = () => {
   const [flight, setFlight] = useState(null);
   const [seats, setSeats] = useState([]);
   const [selectedSeats, setSelectedSeats] = useState([]);
-  const [priceBreakdowns, setPriceBreakdowns] = useState([]);
-
-  const totalBreakdown = priceBreakdowns.length > 0 ? (() => {
-    const ruleMap = {}; // { name, charge, type }
-    let basePrice = 0;
-    let finalPrice = 0;
-    for (const p of priceBreakdowns) {
-      basePrice  += p.basePrice;
-      finalPrice += p.finalPrice;
-      for (const r of (p.appliedRules || [])) {
-        if (ruleMap[r.name]) {
-          ruleMap[r.name] = { ...r, charge: ruleMap[r.name].charge + r.charge };
-        } else {
-          ruleMap[r.name] = { ...r };
-        }
-      }
-    }
-    return { basePrice, finalPrice, rules: Object.values(ruleMap) };
-  })() : null;
+  const [pricing, setPricing] = useState(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [locking, setLocking] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -58,13 +42,34 @@ const SeatSelection = () => {
 
   useEffect(() => { fetchFlight(); }, [fetchFlight]);
 
-  const handleSeatClick = async (seat) => {
-    if (seat.status === 'BOOKED') return;
+  // Release any locks this tab is holding when navigating away without
+  // completing checkout (lockedInRef guards against releasing seats we just
+  // successfully locked and are navigating away from on purpose).
+  const selectedRef = useRef([]);
+  const proceededRef = useRef(false);
+  useEffect(() => { selectedRef.current = selectedSeats; }, [selectedSeats]);
+  useEffect(() => () => {
+    if (!proceededRef.current && selectedRef.current.length > 0) {
+      releaseSeats({ flightId, seatNumbers: selectedRef.current.map(s => s.seatNumber) }).catch(() => {});
+    }
+  }, [flightId]);
+
+  // Combined pricing preview — recomputed for the whole set of selected seats
+  useEffect(() => {
+    if (selectedSeats.length === 0) { setPricing(null); return; }
+    setPricingLoading(true);
+    getFlightPrice(flightId, { seatNumbers: selectedSeats.map(s => s.seatNumber), passengers: selectedSeats.length })
+      .then(res => setPricing(res.data.priceBreakdown))
+      .catch(() => {})
+      .finally(() => setPricingLoading(false));
+  }, [selectedSeats, flightId]);
+
+  const handleSeatClick = (seat) => {
+    if (seat.status !== 'AVAILABLE' && !selectedSeats.find(s => s.seatNumber === seat.seatNumber)) return;
     setError('');
 
     if (selectedSeats.find(s => s.seatNumber === seat.seatNumber)) {
       setSelectedSeats(prev => prev.filter(s => s.seatNumber !== seat.seatNumber));
-      setPriceBreakdowns(prev => prev.filter(p => p.seatNumber !== seat.seatNumber));
       return;
     }
 
@@ -74,24 +79,25 @@ const SeatSelection = () => {
     }
 
     setSelectedSeats(prev => [...prev, seat]);
-
-    try {
-      const res = await getSeatPrice({ flightId, seatNumber: seat.seatNumber });
-      setPriceBreakdowns(prev => [...prev, { seatNumber: seat.seatNumber, ...res.data.priceBreakdown }]);
-    } catch {
-      // price fetch failure is non-blocking
-    }
   };
 
-  const handleProceed = () => {
+  const handleProceed = async () => {
     if (selectedSeats.length !== passengers) return;
-    if (priceBreakdowns.length !== passengers) {
-      setError('Prices are still loading, please wait a moment.');
-      return;
+    setLocking(true);
+    setError('');
+    try {
+      const res = await lockSeats({ flightId, seatNumbers: selectedSeats.map(s => s.seatNumber) });
+      proceededRef.current = true;
+      navigate('/booking-summary', {
+        state: { flight, seats: selectedSeats, priceBreakdown: pricing, lockExpiry: res.data.lockExpiry }
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Seats are no longer available. Please pick different ones.');
+      fetchFlight();
+      setSelectedSeats([]);
+    } finally {
+      setLocking(false);
     }
-    navigate('/booking-summary', {
-      state: { flight, seats: selectedSeats, priceBreakdowns }
-    });
   };
 
   const getSeatStyle = (seat) => {
@@ -100,6 +106,9 @@ const SeatSelection = () => {
     }
     if (selectedSeats.find(s => s.seatNumber === seat.seatNumber)) {
       return { bg: '#dbeafe', border: '#3b82f6', cursor: 'pointer', color: '#1d4ed8' };
+    }
+    if (seat.status === 'LOCKED') {
+      return { bg: '#fef3c7', border: '#f59e0b', cursor: 'not-allowed', color: '#92400e' };
     }
     if (seat.seatClass === 'BUSINESS') {
       return { bg: '#fef3c7', border: '#f59e0b', cursor: 'pointer', color: '#92400e' };
@@ -151,15 +160,16 @@ const SeatSelection = () => {
         <div className="card" style={{ padding: 24 }}>
           <h2 style={{ marginBottom: 4, fontSize: 20 }}>Select Your Seat{passengers > 1 ? 's' : ''}</h2>
           <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
-            Choose {passengers} seat{passengers > 1 ? 's' : ''} — {selectedSeats.length} of {passengers} selected.
+            Choose {passengers} seat{passengers > 1 ? 's' : ''} — {selectedSeats.length} of {passengers} selected. Seats lock for 10 minutes once you continue.
           </p>
 
           {/* Legend */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
             {[
-              { color: 'white',    border: '#e2e8f0', label: 'Economy' },
+              { color: 'white', border: '#e2e8f0', label: 'Economy' },
               { color: '#fef3c7', border: '#f59e0b', label: 'Business' },
               { color: '#dbeafe', border: '#3b82f6', label: 'Your Selection' },
+              { color: '#fef3c7', border: '#f59e0b', label: 'Locked by another user' },
               { color: '#e2e8f0', border: '#cbd5e1', label: 'Booked' },
             ].map(l => (
               <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -177,7 +187,6 @@ const SeatSelection = () => {
 
           {/* Seat grid */}
           <div style={{ background: '#f8fafc', borderRadius: 12, padding: 20, overflowX: 'auto' }}>
-            {/* Column labels */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 8, paddingLeft: 36 }}>
               {['A', 'B', 'C', '', 'D', 'E', 'F'].map((col, i) => (
                 <div key={i} style={{ width: col === '' ? 24 : 40, textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#64748b' }}>
@@ -193,13 +202,14 @@ const SeatSelection = () => {
                   <div style={{ width: 28, textAlign: 'right', fontSize: 12, color: '#94a3b8', fontWeight: 600, marginRight: 4 }}>{row}</div>
                   {sorted.map((seat, idx) => {
                     const style = getSeatStyle(seat);
-                    const isBooked = seat.status === 'BOOKED';
+                    const isSelected = !!selectedSeats.find(s => s.seatNumber === seat.seatNumber);
+                    const disabled = seat.status === 'BOOKED' || (seat.status === 'LOCKED' && !isSelected);
                     return (
                       <React.Fragment key={seat._id}>
                         {idx === 3 && <div style={{ width: 20 }} />}
                         <button
-                          onClick={() => !isBooked && handleSeatClick(seat)}
-                          disabled={isBooked}
+                          onClick={() => !disabled && handleSeatClick(seat)}
+                          disabled={disabled}
                           title={`${seat.seatNumber} — ${seat.seatType} — ${seat.status}`}
                           style={{
                             width: 40, height: 36,
@@ -227,7 +237,6 @@ const SeatSelection = () => {
 
         {/* Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Selection progress */}
           <div className="card" style={{ padding: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 12 }}>
               Seats Selected
@@ -253,7 +262,6 @@ const SeatSelection = () => {
                   ))
               }
             </div>
-            {/* Progress bar */}
             <div style={{ marginTop: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
                 <span>{selectedSeats.length} selected</span>
@@ -271,50 +279,50 @@ const SeatSelection = () => {
           </div>
 
           {/* Price Breakdown */}
-          {totalBreakdown && (
+          {selectedSeats.length > 0 && (
             <div className="card" style={{ padding: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
-                {priceBreakdowns.length > 1 ? 'Total Price' : 'Price Breakdown'}
+                Price Breakdown {pricingLoading && <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400 }}>· updating…</span>}
               </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* Base price */}
-                <div style={priceRow}>
-                  <span style={{ color: '#374151' }}>Base Fare</span>
-                  <span style={{ color: '#374151' }}>₹{totalBreakdown.basePrice.toLocaleString('en-IN')}</span>
-                </div>
-
-                {/* Dynamic named rules */}
-                {totalBreakdown.rules.map(rule => (
-                  <div key={rule.name} style={priceRow}>
-                    <span style={{ color: ruleTypeColor[rule.type] || '#64748b' }}>{rule.name}</span>
-                    <span style={{ color: ruleTypeColor[rule.type] || '#64748b' }}>
-                      +₹{rule.charge.toLocaleString('en-IN')}
-                    </span>
+              {pricing && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={priceRow}>
+                    <span style={{ color: '#374151' }}>Base Fare ({selectedSeats.length} pax)</span>
+                    <span style={{ color: '#374151' }}>₹{pricing.basePrice.toLocaleString('en-IN')}</span>
                   </div>
-                ))}
-
-                {/* No surcharges */}
-                {totalBreakdown.rules.length === 0 && (
-                  <div style={{ fontSize: 12, color: '#94a3b8', padding: '4px 0' }}>No charges apply</div>
-                )}
-
-                <div style={{ borderTop: '2px solid #0f172a', paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 16, fontFamily: 'Syne, sans-serif' }}>
-                  <span>Total</span>
-                  <span>₹{totalBreakdown.finalPrice.toLocaleString('en-IN')}</span>
+                  {pricing.appliedRules.map((rule, i) => (
+                    <div key={i} style={priceRow}>
+                      <span style={{ color: ruleTypeColor[rule.type] || '#64748b' }}>{rule.name}</span>
+                      <span style={{ color: ruleTypeColor[rule.type] || '#64748b' }}>+₹{rule.charge.toLocaleString('en-IN')}</span>
+                    </div>
+                  ))}
+                  {pricing.appliedRules.length === 0 && (
+                    <div style={{ fontSize: 12, color: '#94a3b8', padding: '4px 0' }}>No surcharges apply</div>
+                  )}
+                  <div style={priceRow}>
+                    <span style={{ color: '#374151' }}>Taxes & GST (18%)</span>
+                    <span style={{ color: '#374151' }}>₹{pricing.taxes.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div style={{ borderTop: '2px solid #0f172a', paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 16, fontFamily: 'Syne, sans-serif' }}>
+                    <span>Total {selectedSeats.length < passengers ? '(so far)' : ''}</span>
+                    <span>₹{pricing.finalPrice.toLocaleString('en-IN')}</span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
           <button
             onClick={handleProceed}
-            disabled={selectedSeats.length !== passengers}
+            disabled={selectedSeats.length !== passengers || locking}
             className="btn btn-primary"
             style={{ width: '100%', padding: '14px', fontSize: 16, justifyContent: 'center', borderRadius: 12 }}
           >
-            {selectedSeats.length === passengers
-              ? 'Continue to Passenger Details →'
-              : `Select ${passengers - selectedSeats.length} more seat${passengers - selectedSeats.length > 1 ? 's' : ''}`
+            {locking
+              ? 'Locking seats...'
+              : selectedSeats.length === passengers
+                ? 'Continue to Passenger Details →'
+                : `Select ${passengers - selectedSeats.length} more seat${passengers - selectedSeats.length > 1 ? 's' : ''}`
             }
           </button>
         </div>

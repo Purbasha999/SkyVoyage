@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CITIES from '../constants/cities';
+import { useBooking } from '../context/BookingContext';
 
 const Home = () => {
   const navigate = useNavigate();
+  const { setRoundTripSearch } = useBooking();
   const today = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const dayAfter = new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0];
 
+  const [tripType, setTripType] = useState('oneway');
   const [form, setForm] = useState({
-    source: 'DEL', destination: 'BOM', date: tomorrow, passengers: 1
+    source: 'DEL', destination: 'BOM', date: tomorrow, returnDate: dayAfter, passengers: 1
   });
   const [error, setError] = useState('');
 
@@ -18,8 +22,18 @@ const Home = () => {
       setError('Source and destination cannot be the same.');
       return;
     }
+    if (tripType === 'roundtrip' && form.returnDate < form.date) {
+      setError('Return date must be on or after the departure date.');
+      return;
+    }
     setError('');
-    navigate(`/flights?source=${form.source}&destination=${form.destination}&date=${form.date}&passengers=${form.passengers}`);
+
+    if (tripType === 'roundtrip') {
+      setRoundTripSearch({ source: form.source, destination: form.destination, date: form.date, returnDate: form.returnDate, passengers: form.passengers });
+      navigate(`/flights?source=${form.source}&destination=${form.destination}&date=${form.date}&returnDate=${form.returnDate}&passengers=${form.passengers}&tripType=roundtrip`);
+    } else {
+      navigate(`/flights?source=${form.source}&destination=${form.destination}&date=${form.date}&passengers=${form.passengers}`);
+    }
   };
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -75,6 +89,26 @@ const Home = () => {
           {/* Search Form */}
           <div style={{ maxWidth: 800, margin: '0 auto' }}>
             <div className="card" style={{ padding: 28, borderRadius: 20 }}>
+              {/* Trip type toggle */}
+              <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', borderRadius: 10, padding: 4, marginBottom: 20, width: 'fit-content' }}>
+                {[['oneway', 'One Way'], ['roundtrip', 'Round Trip']].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTripType(key)}
+                    style={{
+                      padding: '8px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700,
+                      fontFamily: 'inherit', cursor: 'pointer',
+                      background: tripType === key ? 'white' : 'transparent',
+                      color: tripType === key ? '#0ea5e9' : '#64748b',
+                      boxShadow: tripType === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none'
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               {error && (
                 <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '10px 16px', marginBottom: 16, color: '#991b1b', fontSize: 14 }}>
                   {error}
@@ -95,9 +129,15 @@ const Home = () => {
                     </select>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</label>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Departure</label>
                     <input type="date" name="date" value={form.date} min={today} onChange={handleChange} style={selectStyle} />
                   </div>
+                  {tripType === 'roundtrip' && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Return</label>
+                      <input type="date" name="returnDate" value={form.returnDate} min={form.date || today} onChange={handleChange} style={selectStyle} />
+                    </div>
+                  )}
                   <div>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Passengers</label>
                     <select name="passengers" value={form.passengers} onChange={handleChange} style={selectStyle}>

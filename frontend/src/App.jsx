@@ -1,11 +1,15 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { BookingProvider } from './context/BookingContext';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import FlightResults from './pages/FlightResults';
 import SeatSelection from './pages/SeatSelection';
+import RoundTripSeatSelection from './pages/RoundTripSeatSelection';
 import BookingSummary from './pages/BookingSummary';
+import RoundTripBookingSummary from './pages/RoundTripBookingSummary';
+import PaymentPage from './pages/PaymentPage';
 import BookingHistory from './pages/BookingHistory';
 import AdminDashboard from './pages/AdminDashboard';
 import Login from './pages/Login';
@@ -35,7 +39,10 @@ function AppRoutes() {
         <Route path="/" element={<Home />} />
         <Route path="/flights" element={<FlightResults />} />
         <Route path="/flights/:id/seats" element={<ProtectedRoute><SeatSelection /></ProtectedRoute>} />
+        <Route path="/round-trip/seats" element={<ProtectedRoute><RoundTripSeatSelection /></ProtectedRoute>} />
         <Route path="/booking-summary" element={<ProtectedRoute><BookingSummary /></ProtectedRoute>} />
+        <Route path="/round-trip/summary" element={<ProtectedRoute><RoundTripBookingSummary /></ProtectedRoute>} />
+        <Route path="/payment" element={<ProtectedRoute><PaymentPage /></ProtectedRoute>} />
         <Route path="/bookings" element={<ProtectedRoute><BookingHistory /></ProtectedRoute>} />
         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/login" element={<Login />} />
@@ -50,7 +57,9 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <AppRoutes />
+        <BookingProvider>
+          <AppRoutes />
+        </BookingProvider>
       </AuthProvider>
     </Router>
   );

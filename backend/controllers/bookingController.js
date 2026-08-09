@@ -1,12 +1,32 @@
 const Booking = require('../models/Booking');
 const Seat = require('../models/Seat');
 const Flight = require('../models/Flight');
-const { calculatePrice } = require('../services/pricingService');
+const { calculatePrice, splitEven } = require('../services/pricingService');
+
+const cleanAddOns = (addOns) => {
+  let safe = [];
+  if (Array.isArray(addOns)) safe = addOns;
+  else if (typeof addOns === 'string') {
+    try { safe = JSON.parse(addOns); } catch { safe = []; }
+  }
+  if (!Array.isArray(safe)) safe = [];
+
+  return safe.map(a => ({
+    name: a?.name || 'Unknown',
+    price: Number(a?.price) || 0,
+    type: a?.type || (a?.baggageWeight ? 'baggage' : 'meal'),
+    baggageWeight: a?.baggageWeight || null
+  }));
+};
 
 // POST /api/bookings/confirm
+// Seats must already be LOCKED by this user (see seatController.lockSeats).
+// Every seat in the request becomes its own Booking document, all sharing
+// one groupId so multi-seat / round-trip checkouts can be displayed and
+// cancelled together.
 exports.confirmBooking = async (req, res) => {
   try {
-    const { flightId, seats: seatBookings } = req.body;
+    const { flightId, seats: seatBookings, addOns = [], discount = 0, groupId: requestedGroupId } = req.body;
     const userId = req.user._id;
 
     if (!flightId || !Array.isArray(seatBookings) || seatBookings.length === 0) {
@@ -23,48 +43,89 @@ exports.confirmBooking = async (req, res) => {
     if (!flight) return res.status(404).json({ success: false, message: 'Flight not found.' });
 
     const seatNumbers = seatBookings.map(s => s.seatNumber);
-    const seats = await Seat.find({ flightId, seatNumber: { $in: seatNumbers } });
+
+    // Seats must be locked by this user — proves nobody else grabbed them
+    // between seat-map selection and checkout.
+    const seats = await Seat.find({
+      flightId,
+      seatNumber: { $in: seatNumbers },
+      lockedBy: userId,
+      status: 'LOCKED'
+    });
 
     if (seats.length !== seatNumbers.length) {
-      return res.status(404).json({ success: false, message: 'One or more seats not found.' });
-    }
-
-    const alreadyBooked = seats.filter(s => s.status === 'BOOKED');
-    if (alreadyBooked.length > 0) {
       return res.status(409).json({
         success: false,
-        message: `Seat(s) ${alreadyBooked.map(s => s.seatNumber).join(', ')} are already booked. Please go back and choose different seats.`
+        message: 'Seat lock expired or seats not locked by you. Please re-select seats.'
       });
     }
 
-    const createdBookings = await Promise.all(
-      seats.map(async (seat) => {
-        const info = seatBookings.find(s => s.seatNumber === seat.seatNumber);
-        const priceBreakdown = await calculatePrice(flight, seat);
-        const bookingRef = Booking.generateReference();
+    const combined = await calculatePrice(flight, seats, seats.length);
 
-        const booking = await Booking.create({
-          bookingReference: bookingRef,
-          userId,
-          flightId,
-          seatId: seat._id,
-          seatNumber: seat.seatNumber,
-          passengerName: info.passengerName.trim(),
-          passengerEmail: req.user.email,
-          passengerPhone: info.passengerPhone?.trim() || '',
-          priceBreakdown,
-          status: 'CONFIRMED'
-        });
+    const cleanedAddOns = cleanAddOns(addOns);
+    const addOnTotal = cleanedAddOns.reduce((sum, a) => sum + a.price, 0);
+    const mealTotal = cleanedAddOns.filter(a => a.type === 'meal').reduce((sum, a) => sum + a.price, 0);
+    const baggageTotal = cleanedAddOns.filter(a => a.type === 'baggage').reduce((sum, a) => sum + a.price, 0);
 
-        seat.status = 'BOOKED';
-        seat.bookedBy = userId;
-        seat.passengerName = info.passengerName.trim();
-        seat.passengerPhone = info.passengerPhone?.trim() || '';
-        await seat.save();
+    const groupTotalBeforeDiscount = combined.finalPrice + addOnTotal;
+    const safeDiscount = Math.max(0, Math.min(Number(discount) || 0, groupTotalBeforeDiscount));
 
-        return booking;
-      })
-    );
+    const groupId = requestedGroupId || Booking.generateGroupId();
+    const n = seats.length;
+
+    const createdBookings = await Promise.all(seats.map(async (seat, idx) => {
+      const info = seatBookings.find(s => s.seatNumber === seat.seatNumber);
+      const isFirst = idx === 0;
+      const own = combined.perSeat[seat.seatNumber] || { seatTypeCharge: 0, seatClassCharge: 0 };
+
+      const demandShare = splitEven(combined.demandCharge, n, idx);
+      const lateShare = splitEven(combined.lateBookingCharge, n, idx);
+      const taxShare = splitEven(combined.taxes, n, idx);
+      const discountShare = isFirst ? safeDiscount : 0;
+
+      const seatSubtotal = flight.basePrice + own.seatTypeCharge + own.seatClassCharge + demandShare + lateShare;
+      const finalPrice = Math.max(0, seatSubtotal + taxShare + (isFirst ? addOnTotal : 0) - discountShare);
+
+      const bookingRef = Booking.generateReference();
+
+      const booking = await Booking.create({
+        bookingReference: bookingRef,
+        groupId,
+        userId,
+        flightId,
+        seatId: seat._id,
+        seatNumber: seat.seatNumber,
+        passengerName: info.passengerName.trim(),
+        passengerAge: info.passengerAge ? Number(info.passengerAge) : undefined,
+        passengerGender: info.passengerGender || undefined,
+        passengerEmail: req.user.email,
+        passengerPhone: info.passengerPhone?.trim() || '',
+        addOns: isFirst ? cleanedAddOns : [],
+        priceBreakdown: {
+          basePrice: flight.basePrice,
+          demandCharge: demandShare,
+          lateBookingCharge: lateShare,
+          seatTypeCharge: own.seatTypeCharge,
+          seatClassCharge: own.seatClassCharge,
+          taxes: taxShare,
+          mealTotal: isFirst ? mealTotal : 0,
+          baggageTotal: isFirst ? baggageTotal : 0,
+          addOnTotal: isFirst ? addOnTotal : 0,
+          discount: discountShare,
+          finalPrice
+        },
+        status: 'CONFIRMED'
+      });
+
+      seat.status = 'BOOKED';
+      seat.bookedBy = userId;
+      seat.lockedBy = null;
+      seat.lockedAt = null;
+      seat.lockExpiry = null;
+      await seat.save();
+
+      return booking;
+    }));
 
     const populatedBookings = await Booking.find({ _id: { $in: createdBookings.map(b => b._id) } })
       .populate('flightId', 'flightNumber airline source destination departureTime arrivalTime')
@@ -74,6 +135,7 @@ exports.confirmBooking = async (req, res) => {
     res.status(201).json({
       success: true,
       message: `${createdBookings.length} booking(s) confirmed successfully!`,
+      groupId,
       bookings: populatedBookings
     });
   } catch (err) {
@@ -106,8 +168,6 @@ exports.cancelBooking = async (req, res) => {
     if (seat) {
       seat.status = 'AVAILABLE';
       seat.bookedBy = null;
-      seat.passengerName = null;
-      seat.passengerPhone = null;
       await seat.save();
     }
 
