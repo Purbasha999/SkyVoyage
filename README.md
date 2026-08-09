@@ -48,8 +48,6 @@ Admin accounts are separate from traveler accounts (see [Demo Accounts](#demo-ac
 - Backend → Render
 - Database → MongoDB Atlas
 
-> **Note:** there is no automated test suite in this project (no Jest/Supertest setup, no test files) — `npm test` in `frontend/` is just the unused default Create React App script.
-
 ---
 
 ## Getting Started

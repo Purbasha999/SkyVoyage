@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { searchFlights } from '../services/api';
 import { useBooking } from '../context/BookingContext';
+import { useAuth } from '../context/AuthContext';
 import FlightCard from '../components/FlightCard';
 import './Flights.css';
 
@@ -9,7 +10,9 @@ const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric',
 
 const FlightResults = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [urlParams] = useSearchParams();
+  const { user } = useAuth();
   const { selectedOutboundFlight, setSelectedOutboundFlight, selectedReturnFlight, setSelectedReturnFlight } = useBooking();
 
   const source = urlParams.get('source') || '';
@@ -58,9 +61,23 @@ const FlightResults = () => {
     }
   };
 
-  const handleSelectOneWay = (flight) => navigate(`/flights/${flight._id}/seats?passengers=${passengers}`);
+  // Booking requires an account. If the user isn't logged in yet, send them
+  // to login with *this* results page as the redirect target — otherwise
+  // they'd land on the (empty) seat-selection route once ProtectedRoute
+  // catches them instead of coming back to what they were looking at.
+  const requireAuth = () => {
+    if (user) return true;
+    navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+    return false;
+  };
+
+  const handleSelectOneWay = (flight) => {
+    if (!requireAuth()) return;
+    navigate(`/flights/${flight._id}/seats?passengers=${passengers}`);
+  };
   const handleSelectOutbound = (flight) => setSelectedOutboundFlight(flight);
   const handleSelectReturn = (flight) => {
+    if (!requireAuth()) return;
     setSelectedReturnFlight(flight);
     navigate(`/round-trip/seats?passengers=${passengers}`);
   };
