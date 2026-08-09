@@ -55,8 +55,11 @@ const SeatMap = ({ flightId, maxSeats = 1, onSeatsSelected, userId, refreshKey }
     let newSelected;
     if (selected.includes(seat.seatNumber)) {
       newSelected = selected.filter(s => s !== seat.seatNumber);
+    } else if (selected.length >= maxSeats) {
+      // At capacity — picking a new seat swaps out the oldest selection
+      // instead of requiring an explicit deselect first.
+      newSelected = [...selected.slice(1), seat.seatNumber];
     } else {
-      if (selected.length >= maxSeats) return;
       newSelected = [...selected, seat.seatNumber];
     }
     setSelected(newSelected);

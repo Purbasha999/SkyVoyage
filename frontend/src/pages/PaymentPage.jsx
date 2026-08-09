@@ -3,18 +3,17 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { confirmBooking, applyPromoCode } from '../services/api';
 import './PaymentPage.css';
 
+const METHODS = [
+  { key: 'UPI', label: 'UPI', icon: '📱' },
+  { key: 'Card', label: 'Card', icon: '💳' },
+  { key: 'NetBanking', label: 'Net Banking', icon: '🏦' },
+];
+
 const PaymentPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const bookingData = location.state?.bookingData;
 
-  const [upiId, setUpiId] = useState('');
-  const [upiVerified, setUpiVerified] = useState(false);
-  const [showUpiPin, setShowUpiPin] = useState(false);
-  const [upiPin, setUpiPin] = useState('');
-  const [card, setCard] = useState({ number: '', expiry: '', cvv: '', name: '' });
-  const [selectedBank, setSelectedBank] = useState('');
-  const [bankLogin, setBankLogin] = useState({ userId: '', password: '' });
   const [promo, setPromo] = useState('');
   const [discount, setDiscount] = useState(0);
   const [method, setMethod] = useState('UPI');
@@ -44,25 +43,7 @@ const PaymentPage = () => {
     }
   };
 
-  const handleUpiVerify = () => {
-    if (!upiId.includes('@')) { setError('Invalid UPI ID'); return; }
-    setError('');
-    setUpiVerified(true);
-  };
-
   const handlePayment = async () => {
-    if (method === 'UPI') {
-      if (!upiVerified) return setError('Verify UPI first');
-      if (!showUpiPin) return setShowUpiPin(true);
-      if (upiPin.length !== 4) return setError('Enter a valid 4-digit PIN');
-    }
-    if (method === 'Card') {
-      if (!card.number || !card.cvv || !card.expiry) return setError('Fill in card details');
-    }
-    if (method === 'NetBanking') {
-      if (!selectedBank || !bankLogin.userId || !bankLogin.password) return setError('Complete bank login');
-    }
-
     setError('');
     setPaying(true);
 
@@ -135,51 +116,12 @@ const PaymentPage = () => {
         <div className="card">
           <h3>Payment Method</h3>
           <div className="payment-options">
-            {['UPI', 'Card', 'NetBanking'].map(m => (
-              <div key={m} className={`method-tile ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</div>
+            {METHODS.map(m => (
+              <div key={m.key} className={`method-tile ${method === m.key ? 'active' : ''}`} onClick={() => setMethod(m.key)}>
+                <span style={{ fontSize: 20, display: 'block', marginBottom: 6 }}>{m.icon}</span>
+                {m.label}
+              </div>
             ))}
-          </div>
-
-          <div className="payment-form">
-            {method === 'UPI' && (
-              <div className="upi-form">
-                <div>
-                  <input value={upiId} onChange={e => { setUpiId(e.target.value); setUpiVerified(false); }} placeholder="Enter UPI ID" />
-                  <button type="button" onClick={handleUpiVerify} className="verify-btn">{upiVerified ? 'Verified ✓' : 'Verify'}</button>
-                </div>
-                {showUpiPin && (
-                  <input type="password" maxLength={4} placeholder="Enter UPI PIN" value={upiPin} onChange={e => setUpiPin(e.target.value)} />
-                )}
-              </div>
-            )}
-
-            {method === 'Card' && (
-              <div className="card-form">
-                <input placeholder="Card Number" value={card.number} onChange={e => setCard({ ...card, number: e.target.value })} />
-                <div className="card-row">
-                  <input placeholder="MM/YY" value={card.expiry} onChange={e => setCard({ ...card, expiry: e.target.value })} />
-                  <input placeholder="CVV" value={card.cvv} onChange={e => setCard({ ...card, cvv: e.target.value })} />
-                </div>
-                <input placeholder="Card Holder Name" value={card.name} onChange={e => setCard({ ...card, name: e.target.value })} />
-              </div>
-            )}
-
-            {method === 'NetBanking' && (
-              <div className="netbanking-form">
-                <select value={selectedBank} onChange={e => setSelectedBank(e.target.value)}>
-                  <option value="">Select Bank</option>
-                  <option value="SBI">SBI</option>
-                  <option value="HDFC">HDFC</option>
-                  <option value="ICICI">ICICI</option>
-                </select>
-                {selectedBank && (
-                  <>
-                    <input placeholder="User ID" value={bankLogin.userId} onChange={e => setBankLogin({ ...bankLogin, userId: e.target.value })} />
-                    <input type="password" placeholder="Password" value={bankLogin.password} onChange={e => setBankLogin({ ...bankLogin, password: e.target.value })} />
-                  </>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -194,7 +136,7 @@ const PaymentPage = () => {
           <hr className="divider" />
           <div className="price-total">₹{finalPrice.toLocaleString('en-IN')}</div>
           <button className="pay-btn" onClick={handlePayment} disabled={paying}>
-            {paying ? 'Processing...' : `Pay ₹${finalPrice.toLocaleString('en-IN')}`}
+            {paying ? 'Processing...' : `Pay ₹${finalPrice.toLocaleString('en-IN')} via ${method}`}
           </button>
         </div>
       </div>

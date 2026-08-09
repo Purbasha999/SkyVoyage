@@ -100,7 +100,7 @@ const RoundTripBookingSummary = () => {
             ))}
           </div>
 
-          <div style={{ marginBottom: 16 }}>
+          <div>
             <h3 className="sc-title" style={{ margin: '0 0 10px' }}>Add-ons — Outbound</h3>
             <AddOnsSection selected={addOns.outbound} setSelected={(val) => setAddOns(prev => ({ ...prev, outbound: val }))} />
           </div>

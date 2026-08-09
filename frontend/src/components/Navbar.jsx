@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './Navbar.css';
@@ -14,16 +14,32 @@ const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
 
   const handleLogout = () => {
     logoutUser();
     navigate('/');
   };
 
+  // Admins only get the Admin link — flight search / bookings are for
+  // travelers, not the admin account.
   const navLinks = [
     { label: 'Flights', path: '/' },
     { label: 'My Bookings', path: '/bookings', auth: true },
   ];
+  const visibleLinks = navLinks.filter(l => (!l.auth || user) && !isAdmin);
+  const loginRedirect = `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`;
 
   return (
     <nav className="navbar">
@@ -34,7 +50,7 @@ const Navbar = () => {
         </Link>
 
         <ul className="navbar-links hide-mobile">
-          {navLinks.filter(l => !l.auth || (user && !isAdmin)).map(l => (
+          {visibleLinks.map(l => (
             <li key={l.path}>
               <Link to={l.path} className={location.pathname === l.path ? 'active' : ''}>{l.label}</Link>
             </li>
@@ -44,7 +60,7 @@ const Navbar = () => {
 
         <div className="navbar-actions hide-mobile">
           {user ? (
-            <div className="user-menu">
+            <div className="user-menu" ref={userMenuRef}>
               <div className="user-avatar" onClick={() => setMenuOpen(!menuOpen)}>
                 {user.name.charAt(0).toUpperCase()}
               </div>
@@ -62,7 +78,7 @@ const Navbar = () => {
             </div>
           ) : (
             <>
-              <Link to="/login" className="btn btn-outline btn-sm">Log In</Link>
+              <Link to={loginRedirect} className="btn btn-outline btn-sm">Log In</Link>
               <Link to="/register" className="btn btn-primary btn-sm">Sign Up</Link>
             </>
           )}
@@ -73,14 +89,14 @@ const Navbar = () => {
 
       {menuOpen && (
         <div className="mobile-menu">
-          {navLinks.filter(l => !l.auth || (user && !isAdmin)).map(l => (
+          {visibleLinks.map(l => (
             <Link key={l.path} to={l.path} onClick={() => setMenuOpen(false)}>{l.label}</Link>
           ))}
           {isAdmin && <Link to="/admin" onClick={() => setMenuOpen(false)}>Admin</Link>}
           {user
             ? <button onClick={() => { handleLogout(); setMenuOpen(false); }} className="btn btn-outline btn-sm" style={{ marginTop: 8 }}>Sign Out</button>
             : <>
-                <Link to="/login" onClick={() => setMenuOpen(false)} className="btn btn-outline btn-sm">Log In</Link>
+                <Link to={loginRedirect} onClick={() => setMenuOpen(false)} className="btn btn-outline btn-sm">Log In</Link>
                 <Link to="/register" onClick={() => setMenuOpen(false)} className="btn btn-primary btn-sm">Sign Up</Link>
               </>
           }

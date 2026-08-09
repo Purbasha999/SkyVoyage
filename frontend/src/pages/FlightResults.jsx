@@ -72,10 +72,20 @@ const FlightResults = () => {
     return 0;
   });
 
-  const handleUpdate = () => {
-    let url = `/flights?source=${source}&destination=${destination}&passengers=${editData.passengers}&date=${editData.date}`;
+  const buildUpdatedUrl = ({ date: d = editData.date, passengers: p = editData.passengers } = {}) => {
+    let url = `/flights?source=${source}&destination=${destination}&passengers=${p}&date=${d}`;
     if (isRoundTrip) url += `&tripType=roundtrip&returnDate=${returnDate}`;
-    navigate(url);
+    return url;
+  };
+
+  const handleUpdate = () => navigate(buildUpdatedUrl());
+
+  // Passenger count takes effect immediately — no need to also click Update,
+  // since a stale count would let you pick a flight that can't actually fit
+  // your party.
+  const handlePassengersChange = (n) => {
+    setEditData(prev => ({ ...prev, passengers: n }));
+    navigate(buildUpdatedUrl({ passengers: n }));
   };
 
   return (
@@ -88,7 +98,7 @@ const FlightResults = () => {
         </div>
         <div className="field-pill">
           👤
-          <select value={editData.passengers} onChange={e => setEditData({ ...editData, passengers: Number(e.target.value) })}>
+          <select value={editData.passengers} onChange={e => handlePassengersChange(Number(e.target.value))}>
             {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Adult' : 'Adults'}</option>)}
           </select>
         </div>

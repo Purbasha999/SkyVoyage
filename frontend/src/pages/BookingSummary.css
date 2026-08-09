@@ -11,6 +11,8 @@
   padding-bottom: 0;
 }
 
+.summary-left { display: flex; flex-direction: column; gap: 20px; }
+
 .summary-card { padding: 22px; margin-bottom: 0; }
 .sc-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--blue-900); margin-bottom: 18px; }
 
